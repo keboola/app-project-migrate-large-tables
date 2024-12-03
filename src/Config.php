@@ -203,4 +203,14 @@ class Config extends BaseConfig
     {
         return (bool) $this->getValue(['parameters',  'isSourceByodb']);
     }
+
+    public function getIncludedWorkspaceSchemas(): array
+    {
+        return $this->getArrayValue(['parameters', 'includeWorkspaceSchemas']);
+    }
+
+    public function getIncludedExternalSchemas(): array
+    {
+        return $this->getArrayValue(['parameters', 'includeExternalSchemas']);
+    }
 }
