@@ -81,11 +81,15 @@ class DatabaseMigrate implements MigrateInterface
             if (in_array($schemaName, self::SKIP_CLONE_SCHEMAS, true)) {
                 continue;
             }
-            if (str_starts_with($schemaName, 'WORKSPACE')) {
+            if (str_starts_with($schemaName, 'WORKSPACE')
+                && !in_array($schemaName, $config->getIncludedWorkspaceSchemas())) {
+
                 continue;
             }
 
-            if (!$this->sourceSapiClient->bucketExists($schemaName)) {
+            if (!$this->sourceSapiClient->bucketExists($schemaName)
+                && !in_array($schemaName, $config->getIncludedExternalSchemas())) {
+
                 continue;
             }
 
