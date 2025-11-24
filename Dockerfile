@@ -1,9 +1,9 @@
-FROM php:8.2-cli-bullseye
+FROM php:8.2-cli-trixie
 
 ARG COMPOSER_FLAGS="--prefer-dist --no-interaction"
 ARG DEBIAN_FRONTEND=noninteractive
-ARG SNOWFLAKE_ODBC_VERSION=3.4.1
-ARG SNOWFLAKE_GPG_KEY=630D9F3CAB551AF3
+ARG SNOWFLAKE_ODBC_VERSION=3.10.0
+ARG SNOWFLAKE_GPG_KEY_ID=2A3149C82551A34A
 ENV COMPOSER_ALLOW_SUPERUSER 1
 ENV COMPOSER_PROCESS_TIMEOUT 3600
 ENV LANGUAGE=en_US.UTF-8
@@ -43,23 +43,36 @@ RUN set -x \
     && docker-php-source delete
 
 #snoflake download + verify package
-COPY docker/snowflake/snowflake-policy.pol /etc/debsig/policies/$SNOWFLAKE_GPG_KEY/generic.pol
+COPY docker/snowflake/snowflake-policy.pol /etc/debsig/policies/$SNOWFLAKE_GPG_KEY_ID/generic.pol
 COPY docker/snowflake/simba.snowflake.ini /usr/lib/snowflake/odbc/lib/simba.snowflake.ini
 ADD https://sfc-repo.azure.snowflakecomputing.com/odbc/linux/$SNOWFLAKE_ODBC_VERSION/snowflake-odbc-$SNOWFLAKE_ODBC_VERSION.x86_64.deb /tmp/snowflake-odbc.deb
 
 RUN mkdir -p ~/.gnupg \
     && chmod 700 ~/.gnupg \
     && echo "disable-ipv6" >> ~/.gnupg/dirmngr.conf \
-    && mkdir -p /usr/share/debsig/keyrings/$SNOWFLAKE_GPG_KEY \
-    && if ! gpg --keyserver hkp://keys.gnupg.net --recv-keys $SNOWFLAKE_GPG_KEY; then \
-        gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys $SNOWFLAKE_GPG_KEY;  \
-    fi \
-    && gpg --export $SNOWFLAKE_GPG_KEY > /usr/share/debsig/keyrings/$SNOWFLAKE_GPG_KEY/debsig.gpg \
+    && mkdir -p /etc/gnupg \
+    && echo "allow-weak-digest-algos" >> /etc/gnupg/gpg.conf \
+    && mkdir -p /usr/share/debsig/keyrings/$SNOWFLAKE_GPG_KEY_ID \
+    && gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys $SNOWFLAKE_GPG_KEY_ID \
+    && gpg --export $SNOWFLAKE_GPG_KEY_ID > /usr/share/debsig/keyrings/$SNOWFLAKE_GPG_KEY_ID/debsig.gpg \
     && curl https://sfc-repo.snowflakecomputing.com/odbc/linux/$SNOWFLAKE_ODBC_VERSION/snowflake-odbc-$SNOWFLAKE_ODBC_VERSION.x86_64.deb --output /tmp/snowflake-odbc.deb \
     && debsig-verify /tmp/snowflake-odbc.deb \
-    && gpg --batch --delete-key --yes $SNOWFLAKE_GPG_KEY \
+    && gpg --batch --delete-key --yes $SNOWFLAKE_GPG_KEY_ID \
     && dpkg -i /tmp/snowflake-odbc.deb \
     && rm /tmp/snowflake-odbc.deb
+
+RUN cat <<EOF > /etc/odbcinst.ini
+[ODBC Drivers]
+SnowflakeDSIIDriver=Installed
+
+[SnowflakeDSIIDriver]
+APILevel=1
+ConnectFunctions=YYY
+Description=Snowflake DSII
+Driver=/usr/lib/snowflake/odbc/lib/libSnowflake.so
+DriverODBCVer=$SNOWFLAKE_ODBC_VERSION
+SQLLevel=1
+EOF
 
 RUN pecl install xdebug \
     && docker-php-ext-enable xdebug
