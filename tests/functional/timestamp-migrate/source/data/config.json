@@ -1,0 +1,7 @@
+{
+  "parameters": {
+    "sourceKbcUrl": "%env(string:SOURCE_CLIENT_URL)%",
+    "#sourceKbcToken": "%env(string:SOURCE_CLIENT_TOKEN)%",
+    "preserveTimestamp": true
+  }
+}
