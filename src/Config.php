@@ -248,4 +248,9 @@ class Config extends BaseConfig
     {
         return (bool) $this->getValue(['parameters', 'migrateData'], true);
     }
+
+    public function getParallelism(): int
+    {
+        return $this->getIntValue(['parameters', 'parallelism'], 1);
+    }
 }
