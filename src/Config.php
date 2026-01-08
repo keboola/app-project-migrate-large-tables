@@ -214,6 +214,18 @@ class Config extends BaseConfig
         return (bool) $this->getValue(['parameters', 'dryRun']);
     }
 
+    public function shouldSkipExportInDryRun(): bool
+    {
+        return (bool) $this->getValue(['parameters', 'skipExportInDryRun']);
+    }
+
+    public function getConcurrency(): int
+    {
+        $value = $this->getValue(['parameters', 'concurrency'], 1);
+        assert(is_numeric($value));
+        return (int) $value;
+    }
+
     public function isSourceByodb(): bool
     {
         return (bool) $this->getValue(['parameters',  'isSourceByodb']);
