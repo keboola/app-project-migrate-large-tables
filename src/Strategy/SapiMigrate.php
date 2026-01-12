@@ -88,6 +88,11 @@ class SapiMigrate implements MigrateInterface
 
     private function migrateTable(array $sourceTableInfo, Config $config): void
     {
+        if ($this->dryRun) {
+            $this->logger->info(sprintf('[dry-run] Migrate table %s', $sourceTableInfo['id']));
+            return;
+        }
+
         $this->logger->info(sprintf('Exporting table %s', $sourceTableInfo['id']));
         $file = $this->sourceClient->exportTableAsync($sourceTableInfo['id'], [
             'gzip' => true,
@@ -119,45 +124,31 @@ class SapiMigrate implements MigrateInterface
         } elseif ($sourceFileInfo['isSliced'] === true) {
             $optionUploadedFile->setIsSliced(true);
 
-            if ($this->dryRun === false) {
-                $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
-                $slices = $this->sourceClient->downloadSlicedFile($sourceFileId, $tmp->getTmpFolder());
+            $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
+            $slices = $this->sourceClient->downloadSlicedFile($sourceFileId, $tmp->getTmpFolder());
 
-                $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
-                $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);
-            } else {
-                $this->logger->info(sprintf('[dry-run] Migrate table %s', $sourceTableInfo['id']));
-                $destinationFileId = null;
-            }
+            $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
+            $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);
         } else {
             $fileName = $tmp->getTmpFolder() . '/' . $sourceFileInfo['name'];
 
-            if ($this->dryRun === false) {
-                $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
-                $this->sourceClient->downloadFile($sourceFileId, $fileName);
+            $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
+            $this->sourceClient->downloadFile($sourceFileId, $fileName);
 
-                $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
-                $destinationFileId = $this->targetClient->uploadFile($fileName, $optionUploadedFile);
-            } else {
-                $this->logger->info(sprintf('[dry-run] Uploading table %s', $sourceTableInfo['id']));
-                $destinationFileId = null;
-            }
+            $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
+            $destinationFileId = $this->targetClient->uploadFile($fileName, $optionUploadedFile);
         }
 
-        if ($this->dryRun === false) {
-            // Upload data to table
-            $this->targetClient->writeTableAsyncDirect(
-                $sourceTableInfo['id'],
-                [
-                    'name' => $sourceTableInfo['name'],
-                    'dataFileId' => $destinationFileId,
-                    'columns' => $sourceTableInfo['columns'],
-                    'useTimestampFromDataFile' => $config->preserveTimestamp(),
-                ],
-            );
-        } else {
-            $this->logger->info(sprintf('[dry-run] Import data to table "%s"', $sourceTableInfo['name']));
-        }
+        // Upload data to table
+        $this->targetClient->writeTableAsyncDirect(
+            $sourceTableInfo['id'],
+            [
+                'name' => $sourceTableInfo['name'],
+                'dataFileId' => $destinationFileId,
+                'columns' => $sourceTableInfo['columns'],
+                'useTimestampFromDataFile' => $config->preserveTimestamp(),
+            ],
+        );
 
         $tmp->remove();
     }
