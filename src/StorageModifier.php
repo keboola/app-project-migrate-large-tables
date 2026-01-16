@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Keboola\AppProjectMigrateLargeTables;
 
 use Keboola\Csv\CsvFile;
+use Keboola\Datatype\Definition\Bigquery;
+use Keboola\Datatype\Definition\Snowflake;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\ClientException;
 use Keboola\StorageApi\Exception as StorageApiException;
@@ -59,6 +61,9 @@ class StorageModifier
 
     private function createTypedTable(array $tableInfo): void
     {
+        $sourceBackend = $tableInfo['bucket']['backend'];
+        $destinationBackend = $this->getDestinationBucketBackend($tableInfo['bucket']['id']);
+
         $columns = [];
         foreach ($tableInfo['columns'] as $column) {
             $columns[$column] = [];
@@ -73,15 +78,27 @@ class StorageModifier
                 $columnMetadata[$metadata['key']] = $metadata['value'];
             }
 
-            $definition = [
-                'type' => $columnMetadata['KBC.datatype.type'],
-                'nullable' => $columnMetadata['KBC.datatype.nullable'] === '1',
-            ];
-            if (isset($columnMetadata['KBC.datatype.length'])) {
-                $definition['length'] = $columnMetadata['KBC.datatype.length'];
-            }
-            if (isset($columnMetadata['KBC.datatype.default'])) {
-                $definition['default'] = $columnMetadata['KBC.datatype.default'];
+            if ($destinationBackend !== $sourceBackend) {
+                // Cross-backend migration: use basetype to get correct native type for target backend
+                $sourceBaseType = $this->getBaseType(
+                    $sourceBackend,
+                    $columnMetadata['KBC.datatype.type'],
+                );
+                $definition = $this->getDefinitionForBasetype($destinationBackend, $sourceBaseType);
+                // Preserve nullable property from source
+                $definition['nullable'] = $columnMetadata['KBC.datatype.nullable'] === '1';
+            } else {
+                // Same backend: use original type directly
+                $definition = [
+                    'type' => $columnMetadata['KBC.datatype.type'],
+                    'nullable' => $columnMetadata['KBC.datatype.nullable'] === '1',
+                ];
+                if (isset($columnMetadata['KBC.datatype.length'])) {
+                    $definition['length'] = $columnMetadata['KBC.datatype.length'];
+                }
+                if (isset($columnMetadata['KBC.datatype.default'])) {
+                    $definition['default'] = $columnMetadata['KBC.datatype.default'];
+                }
             }
 
             $columns[$columnName] = [
@@ -165,6 +182,52 @@ class StorageModifier
                 'key' => $item['key'],
                 'value' => $item['value'],
             ];
+        }
+        return $result;
+    }
+
+    private function getDestinationBucketBackend(string $bucketId): string
+    {
+        $bucket = $this->client->getBucket($bucketId);
+        return $bucket['backend'];
+    }
+
+    private function getBaseType(string $backend, string $originalType): ?string
+    {
+        switch ($backend) {
+            case 'snowflake':
+                return (new Snowflake($originalType))->getBasetype();
+            case 'bigquery':
+                return (new Bigquery($originalType))->getBasetype();
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * @return array{type: string, length?: string}
+     */
+    private function getDefinitionForBasetype(string $backend, ?string $basetype): array
+    {
+        if ($basetype === null) {
+            // Fallback to STRING type if basetype cannot be determined
+            return ['type' => 'STRING'];
+        }
+
+        switch ($backend) {
+            case 'snowflake':
+                $definition = Snowflake::getDefinitionForBasetype($basetype);
+                break;
+            case 'bigquery':
+                $definition = Bigquery::getDefinitionForBasetype($basetype);
+                break;
+            default:
+                return ['type' => 'STRING'];
+        }
+
+        $result = ['type' => $definition->getType()];
+        if ($definition->getLength() !== null) {
+            $result['length'] = $definition->getLength();
         }
         return $result;
     }
