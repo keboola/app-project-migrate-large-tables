@@ -253,4 +253,22 @@ class Config extends BaseConfig
     {
         return $this->getIntValue(['parameters', 'parallelism'], 1);
     }
+
+    /**
+     * Get the chunk size threshold in bytes for large table migration.
+     * Returns null if not set (uses default 50GB).
+     */
+    public function getChunkSizeBytes(): ?int
+    {
+        $chunkSize = $this->getValue(['parameters', 'chunkSize']);
+        if ($chunkSize === null || !is_string($chunkSize)) {
+            return null;
+        }
+        // Parse "NGB" format to bytes
+        preg_match('/^(\d+)GB$/i', $chunkSize, $matches);
+        if (!isset($matches[1])) {
+            return null;
+        }
+        return (int) $matches[1] * 1000 * 1000 * 1000;
+    }
 }

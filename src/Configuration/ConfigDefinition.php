@@ -26,6 +26,18 @@ class ConfigDefinition extends BaseConfigDefinition
                 ->scalarNode('#sourceKbcToken')->isRequired()->cannotBeEmpty()->end()
                 ->arrayNode('includeWorkspaceSchemas')->prototype('scalar')->end()->end()
                 ->booleanNode('preserveTimestamp')->defaultFalse()->end()
+                ->scalarNode('chunkSize')
+                    ->defaultNull()
+                    ->validate()
+                        ->ifTrue(function ($v) {
+                            if ($v === null) {
+                                return false;
+                            }
+                            return !preg_match('/^\d+GB$/i', $v);
+                        })
+                        ->thenInvalid('chunkSize must be in format "NGB" (e.g., "100GB")')
+                    ->end()
+                ->end()
                 ->arrayNode('tables')->prototype('scalar')->end()->end()
                 ->booleanNode('migrateData')->defaultTrue()->end()
                 ->arrayNode('replica')

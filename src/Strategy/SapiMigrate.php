@@ -16,7 +16,7 @@ use Psr\Log\LoggerInterface;
 
 class SapiMigrate implements MigrateInterface
 {
-    private const LARGE_GCS_TABLE_SIZE = 50*1000*1000*1000; // 50 GB
+    private const DEFAULT_LARGE_GCS_TABLE_SIZE = 50*1000*1000*1000; // 50 GB
     private StorageModifier $storageModifier;
     private MigrateGcsLargeTable $migrateGcsLargeTable;
 
@@ -222,9 +222,10 @@ class SapiMigrate implements MigrateInterface
             ->setFederationToken(true)
             ->setFileName($tableIdStr);
         $tableSize = $sourceFileInfo['sizeBytes'];
+        $largeTableThreshold = $config->getChunkSizeBytes() ?? self::DEFAULT_LARGE_GCS_TABLE_SIZE;
         if ($sourceFileInfo['provider'] === 'gcp' &&
             $sourceFileInfo['isSliced'] === true &&
-            $tableSize > self::LARGE_GCS_TABLE_SIZE
+            $tableSize > $largeTableThreshold
         ) {
             $this->migrateGcsLargeTable->migrate(
                 $sourceFileId,
@@ -281,9 +282,10 @@ class SapiMigrate implements MigrateInterface
             ->setFileName($sourceTableInfo['id'])
         ;
         $tableSize = $sourceFileInfo['sizeBytes'];
+        $largeTableThreshold = $config->getChunkSizeBytes() ?? self::DEFAULT_LARGE_GCS_TABLE_SIZE;
         if ($sourceFileInfo['provider'] === 'gcp' &&
             $sourceFileInfo['isSliced'] === true &&
-            $tableSize > self::LARGE_GCS_TABLE_SIZE
+            $tableSize > $largeTableThreshold
         ) {
             $this->migrateGcsLargeTable->migrate(
                 $sourceFileId,
