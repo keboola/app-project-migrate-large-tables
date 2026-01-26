@@ -257,6 +257,7 @@ class Config extends BaseConfig
     /**
      * Get the chunk size threshold in bytes for large table migration.
      * Returns null if not set (uses default 50GB).
+     * Supports MB, GB, and TB formats (e.g., "10MB", "100GB", "1TB").
      */
     public function getChunkSizeBytes(): ?int
     {
@@ -264,11 +265,18 @@ class Config extends BaseConfig
         if ($chunkSize === null || !is_string($chunkSize)) {
             return null;
         }
-        // Parse "NGB" format to bytes
-        preg_match('/^(\d+)GB$/i', $chunkSize, $matches);
-        if (!isset($matches[1])) {
+        // Parse "N[MB|GB|TB]" format to bytes
+        preg_match('/^(\d+)(MB|GB|TB)$/i', $chunkSize, $matches);
+        if (!isset($matches[1]) || !isset($matches[2])) {
             return null;
         }
-        return (int) $matches[1] * 1000 * 1000 * 1000;
+        $value = (int) $matches[1];
+        $unit = strtoupper($matches[2]);
+        $multipliers = [
+            'MB' => 1000 * 1000,
+            'GB' => 1000 * 1000 * 1000,
+            'TB' => 1000 * 1000 * 1000 * 1000,
+        ];
+        return $value * $multipliers[$unit];
     }
 }

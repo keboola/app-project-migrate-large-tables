@@ -33,9 +33,9 @@ class ConfigDefinition extends BaseConfigDefinition
                             if ($v === null) {
                                 return false;
                             }
-                            return !preg_match('/^\d+GB$/i', $v);
+                            return !preg_match('/^\d+(MB|GB|TB)$/i', $v);
                         })
-                        ->thenInvalid('chunkSize must be in format "NGB" (e.g., "100GB")')
+                        ->thenInvalid('chunkSize must be in format "N[MB|GB|TB]" (e.g., "10MB", "100GB", "1TB")')
                     ->end()
                 ->end()
                 ->arrayNode('tables')->prototype('scalar')->end()->end()
