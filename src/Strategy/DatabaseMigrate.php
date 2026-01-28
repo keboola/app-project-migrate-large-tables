@@ -100,6 +100,10 @@ class DatabaseMigrate implements MigrateInterface
             if (in_array($schemaName, self::SKIP_CLONE_SCHEMAS, true)) {
                 continue;
             }
+            if (preg_match('/^READER_/', $schemaName)) {
+                $this->logger->info(sprintf('Skipping reader schema "%s".', $schemaName));
+                continue;
+            }
             if (preg_match('/^(\d+_)?WORKSPACE/', $schemaName)
                 && !in_array($schemaName, $config->getIncludedWorkspaceSchemas())) {
                 continue;
