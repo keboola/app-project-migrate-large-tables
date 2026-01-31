@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Keboola\AppProjectMigrateLargeTables;
 
 use Keboola\Csv\CsvFile;
+use Keboola\Datatype\Definition\Bigquery;
+use Keboola\Datatype\Definition\Snowflake;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\ClientException;
 use Keboola\StorageApi\Exception as StorageApiException;
@@ -15,6 +17,9 @@ use Keboola\Temp\Temp;
 class StorageModifier
 {
     private Temp $tmp;
+
+    /** @var array<string, string> */
+    private array $bucketBackends = [];
 
     public function __construct(readonly Client $client)
     {
@@ -33,12 +38,22 @@ class StorageModifier
     public function createTable(array $tableInfo): void
     {
         if ($tableInfo['isTyped']) {
-            $this->createTypedTable($tableInfo);
+            $destinationBackend = $this->getDestinationBucketBackend($tableInfo['bucket']['id']);
+            $this->createTypedTable($tableInfo, $destinationBackend);
         } else {
             $this->createNonTypedTable($tableInfo);
         }
 
         $this->restoreTableColumnsMetadata($tableInfo, $tableInfo['id'], new Metadata($this->client));
+    }
+
+    private function getDestinationBucketBackend(string $bucketId): string
+    {
+        if (!isset($this->bucketBackends[$bucketId])) {
+            $bucket = $this->client->getBucket($bucketId);
+            $this->bucketBackends[$bucketId] = $bucket['backend'];
+        }
+        return $this->bucketBackends[$bucketId];
     }
 
     private function createNonTypedTable(array $tableInfo): void
@@ -57,8 +72,9 @@ class StorageModifier
         );
     }
 
-    private function createTypedTable(array $tableInfo): void
+    private function createTypedTable(array $tableInfo, string $destinationBackend): void
     {
+        $sourceBackend = $tableInfo['bucket']['backend'];
         $columns = [];
         foreach ($tableInfo['columns'] as $column) {
             $columns[$column] = [];
@@ -73,15 +89,24 @@ class StorageModifier
                 $columnMetadata[$metadata['key']] = $metadata['value'];
             }
 
-            $definition = [
-                'type' => $columnMetadata['KBC.datatype.type'],
-                'nullable' => $columnMetadata['KBC.datatype.nullable'] === '1',
-            ];
-            if (isset($columnMetadata['KBC.datatype.length'])) {
-                $definition['length'] = $columnMetadata['KBC.datatype.length'];
-            }
-            if (isset($columnMetadata['KBC.datatype.default'])) {
-                $definition['default'] = $columnMetadata['KBC.datatype.default'];
+            if ($destinationBackend !== $sourceBackend) {
+                $sourceBaseType = $this->getBaseType(
+                    $sourceBackend,
+                    $columnMetadata['KBC.datatype.type'],
+                );
+                $definition = $this->getDefinitionForBasetype($destinationBackend, $sourceBaseType);
+                $definition['nullable'] = $columnMetadata['KBC.datatype.nullable'] === '1';
+            } else {
+                $definition = [
+                    'type' => $columnMetadata['KBC.datatype.type'],
+                    'nullable' => $columnMetadata['KBC.datatype.nullable'] === '1',
+                ];
+                if (isset($columnMetadata['KBC.datatype.length'])) {
+                    $definition['length'] = $columnMetadata['KBC.datatype.length'];
+                }
+                if (isset($columnMetadata['KBC.datatype.default'])) {
+                    $definition['default'] = $columnMetadata['KBC.datatype.default'];
+                }
             }
 
             $columns[$columnName] = [
@@ -167,5 +192,44 @@ class StorageModifier
             ];
         }
         return $result;
+    }
+
+    private function getBaseType(string $backend, string $originalType): ?string
+    {
+        switch ($backend) {
+            case 'snowflake':
+                return (new Snowflake($originalType))->getBasetype();
+            case 'bigquery':
+                return (new Bigquery($originalType))->getBasetype();
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * @return array{type: string, length: string|null, nullable: bool}
+     */
+    private function getDefinitionForBasetype(string $backend, ?string $basetype): array
+    {
+        if ($basetype === null) {
+            return [
+                'type' => 'STRING',
+                'length' => null,
+                'nullable' => true,
+            ];
+        }
+
+        switch ($backend) {
+            case 'snowflake':
+                return Snowflake::getDefinitionForBasetype($basetype)->toArray();
+            case 'bigquery':
+                return Bigquery::getDefinitionForBasetype($basetype)->toArray();
+            default:
+                return [
+                    'type' => 'STRING',
+                    'length' => null,
+                    'nullable' => true,
+                ];
+        }
     }
 }
