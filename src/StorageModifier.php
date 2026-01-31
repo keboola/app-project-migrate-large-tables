@@ -5,20 +5,26 @@ declare(strict_types=1);
 namespace Keboola\AppProjectMigrateLargeTables;
 
 use Keboola\Csv\CsvFile;
+use Keboola\Datatype\Definition\Bigquery;
+use Keboola\Datatype\Definition\Snowflake;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\ClientException;
 use Keboola\StorageApi\Exception as StorageApiException;
 use Keboola\StorageApi\Metadata;
 use Keboola\StorageApi\Options\Metadata\TableMetadataUpdateOptions;
 use Keboola\Temp\Temp;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 class StorageModifier
 {
     private Temp $tmp;
+    private LoggerInterface $logger;
 
-    public function __construct(readonly Client $client)
+    public function __construct(readonly Client $client, ?LoggerInterface $logger = null)
     {
         $this->tmp = new Temp();
+        $this->logger = $logger ?? new NullLogger();
     }
 
     public function createBucket(string $schemaName): void
@@ -59,6 +65,8 @@ class StorageModifier
 
     private function createTypedTable(array $tableInfo): void
     {
+        $sourceBackendType = $tableInfo['bucket']['backend'];
+        $destinationBackendType = $this->getDestinationBucketBackend($tableInfo['bucket']['id']);
         $columns = [];
         foreach ($tableInfo['columns'] as $column) {
             $columns[$column] = [];
@@ -72,18 +80,38 @@ class StorageModifier
                 }
                 $columnMetadata[$metadata['key']] = $metadata['value'];
             }
-
-            $definition = [
-                'type' => $columnMetadata['KBC.datatype.type'],
-                'nullable' => $columnMetadata['KBC.datatype.nullable'] === '1',
-            ];
-            if (isset($columnMetadata['KBC.datatype.length'])) {
-                $definition['length'] = $columnMetadata['KBC.datatype.length'];
+            if ($destinationBackendType !== $sourceBackendType) {
+                $sourceBaseType = $this->getBaseType(
+                    $sourceBackendType,
+                    $columnMetadata['KBC.datatype.type'],
+                );
+                switch ($destinationBackendType) {
+                    case 'snowflake':
+                        $definition = (Snowflake::getDefinitionForBasetype((string) $sourceBaseType))->toArray();
+                        break;
+                    case 'bigquery':
+                        $definition = (Bigquery::getDefinitionForBasetype((string) $sourceBaseType))->toArray();
+                        break;
+                    default:
+                        $this->logger->warning(sprintf(
+                            'Unsupported destination backend type "%s" for cross-backend type conversion',
+                            $destinationBackendType,
+                        ));
+                        continue 2;
+                }
+                $definition['nullable'] = $columnMetadata['KBC.datatype.nullable'] === '1';
+            } else {
+                $definition = [
+                    'type' => $columnMetadata['KBC.datatype.type'],
+                    'nullable' => $columnMetadata['KBC.datatype.nullable'] === '1',
+                ];
+                if (isset($columnMetadata['KBC.datatype.length'])) {
+                    $definition['length'] = $columnMetadata['KBC.datatype.length'];
+                }
+                if (isset($columnMetadata['KBC.datatype.default'])) {
+                    $definition['default'] = $columnMetadata['KBC.datatype.default'];
+                }
             }
-            if (isset($columnMetadata['KBC.datatype.default'])) {
-                $definition['default'] = $columnMetadata['KBC.datatype.default'];
-            }
-
             $columns[$columnName] = [
                 'name' => $columnName,
                 'definition' => $definition,
@@ -167,5 +195,23 @@ class StorageModifier
             ];
         }
         return $result;
+    }
+
+    private function getDestinationBucketBackend(string $bucketId): string
+    {
+        $bucket = $this->client->getBucket($bucketId);
+        return $bucket['backend'];
+    }
+
+    private function getBaseType(string $backend, string $originalType): ?string
+    {
+        switch ($backend) {
+            case 'snowflake':
+                return (new Snowflake($originalType))->getBasetype();
+            case 'bigquery':
+                return (new Bigquery($originalType))->getBasetype();
+            default:
+                return null;
+        }
     }
 }

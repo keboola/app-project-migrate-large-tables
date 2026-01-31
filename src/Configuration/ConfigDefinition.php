@@ -19,6 +19,7 @@ class ConfigDefinition extends BaseConfigDefinition
             ->children()
                 ->enumNode('mode')->values(['sapi', 'database'])->defaultValue('sapi')->end()
                 ->booleanNode('dryRun')->defaultFalse()->end()
+                ->integerNode('parallelism')->defaultValue(1)->min(1)->max(10)->end()
                 ->booleanNode('isSourceByodb')->defaultFalse()->end()
                 ->scalarNode('sourceByodb')->end()
                 ->scalarNode('sourceKbcUrl')->isRequired()->cannotBeEmpty()->end()
