@@ -8,6 +8,7 @@ use Keboola\AppProjectMigrateLargeTables\Config;
 use Keboola\AppProjectMigrateLargeTables\MigrateInterface;
 use Keboola\AppProjectMigrateLargeTables\StorageModifier;
 use Keboola\AppProjectMigrateLargeTables\Strategy\SapiMigrate\MigrateGcsLargeTable;
+use Keboola\AppProjectMigrateLargeTables\TimestampConverter;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\ClientException;
 use Keboola\StorageApi\Options\FileUploadOptions;
@@ -28,6 +29,7 @@ class SapiMigrate implements MigrateInterface
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
+        private readonly string $sourceTimezone = 'America/Los_Angeles',
     ) {
         $this->storageModifier = new StorageModifier($this->targetClient);
         $this->migrateGcsLargeTable = new MigrateGcsLargeTable(
@@ -35,6 +37,7 @@ class SapiMigrate implements MigrateInterface
             $this->targetClient,
             $this->logger,
             $this->dryRun,
+            $this->sourceTimezone,
         );
     }
 
@@ -239,6 +242,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $tableIdStr));
                 $slices = $this->sourceClient->downloadSlicedFile($sourceFileId, $tmp->getTmpFolder());
+                $this->convertTimestampsInSlices($tableInfo, $slices);
                 $this->logger->info(sprintf('Uploading table %s', $tableIdStr));
                 $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);
             } else {
@@ -251,6 +255,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $tableIdStr));
                 $this->sourceClient->downloadFile($sourceFileId, $fileName);
+                $this->convertTimestampsInFile($tableInfo, $fileName);
                 $this->logger->info(sprintf('Uploading table %s', $tableIdStr));
                 $destinationFileId = $this->targetClient->uploadFile($fileName, $optionUploadedFile);
             } else {
@@ -299,6 +304,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
                 $slices = $this->sourceClient->downloadSlicedFile($sourceFileId, $tmp->getTmpFolder());
+                $this->convertTimestampsInSlices($sourceTableInfo, $slices);
 
                 $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
                 $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);
@@ -312,6 +318,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
                 $this->sourceClient->downloadFile($sourceFileId, $fileName);
+                $this->convertTimestampsInFile($sourceTableInfo, $fileName);
 
                 $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
                 $destinationFileId = $this->targetClient->uploadFile($fileName, $optionUploadedFile);
@@ -368,5 +375,49 @@ class SapiMigrate implements MigrateInterface
             );
         }
         return $listTables;
+    }
+
+    /**
+     * @param array<string, mixed> $tableInfo
+     */
+    private function createTimestampConverter(array $tableInfo): TimestampConverter
+    {
+        /** @var string[] $columns */
+        $columns = $tableInfo['columns'];
+        /** @var array<string, array<int, array<string, string>>> $columnMetadata */
+        $columnMetadata = $tableInfo['columnMetadata'] ?? [];
+        return new TimestampConverter(
+            $columns,
+            $columnMetadata,
+            $this->sourceTimezone,
+            $this->logger,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $tableInfo
+     * @param string[] $slicePaths
+     */
+    private function convertTimestampsInSlices(array $tableInfo, array $slicePaths): void
+    {
+        $converter = $this->createTimestampConverter($tableInfo);
+        if ($converter->hasTimestampColumns()) {
+            assert(is_string($tableInfo['id']));
+            $this->logger->info(sprintf('Converting timezone timestamps to UTC for table %s', $tableInfo['id']));
+            $converter->processGzippedSlices($slicePaths);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $tableInfo
+     */
+    private function convertTimestampsInFile(array $tableInfo, string $filePath): void
+    {
+        $converter = $this->createTimestampConverter($tableInfo);
+        if ($converter->hasTimestampColumns()) {
+            assert(is_string($tableInfo['id']));
+            $this->logger->info(sprintf('Converting timezone timestamps to UTC for table %s', $tableInfo['id']));
+            $converter->processGzippedFile($filePath);
+        }
     }
 }

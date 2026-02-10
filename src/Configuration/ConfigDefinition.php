@@ -26,6 +26,7 @@ class ConfigDefinition extends BaseConfigDefinition
                 ->scalarNode('#sourceKbcToken')->isRequired()->cannotBeEmpty()->end()
                 ->arrayNode('includeWorkspaceSchemas')->prototype('scalar')->end()->end()
                 ->booleanNode('preserveTimestamp')->defaultFalse()->end()
+                ->scalarNode('sourceTimezone')->defaultValue('America/Los_Angeles')->end()
                 ->arrayNode('tables')->prototype('scalar')->end()->end()
                 ->booleanNode('migrateData')->defaultTrue()->end()
                 ->arrayNode('replica')

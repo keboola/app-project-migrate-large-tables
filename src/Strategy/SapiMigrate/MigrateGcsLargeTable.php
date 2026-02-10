@@ -7,6 +7,7 @@ namespace Keboola\AppProjectMigrateLargeTables\Strategy\SapiMigrate;
 use Google\Auth\FetchAuthTokenInterface;
 use Google\Cloud\Storage\StorageClient as GoogleStorageClient;
 use GuzzleHttp\Utils;
+use Keboola\AppProjectMigrateLargeTables\TimestampConverter;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\Options\FileUploadOptions;
 use Keboola\StorageApi\Options\GetFileOptions;
@@ -23,6 +24,7 @@ class MigrateGcsLargeTable
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
+        private readonly string $sourceTimezone = 'America/Los_Angeles',
     ) {
     }
 
@@ -74,6 +76,22 @@ class MigrateGcsLargeTable
                 );
                 $blobPath = explode($sprintf, $entry['url']);
                 $retBucket->object($blobPath[1])->downloadToFile($destinationFile);
+            }
+
+            $converter = new TimestampConverter(
+                $tableInfo['columns'],
+                $tableInfo['columnMetadata'] ?? [],
+                $this->sourceTimezone,
+                $this->logger,
+            );
+            if ($converter->hasTimestampColumns()) {
+                $this->logger->info(sprintf(
+                    'Converting timezone timestamps to UTC for table %s (chunk %d/%d)',
+                    $tableInfo['id'],
+                    $chunkKey + 1,
+                    count($chunks),
+                ));
+                $converter->processGzippedSlices($slices);
             }
 
             $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);

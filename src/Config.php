@@ -253,4 +253,11 @@ class Config extends BaseConfig
     {
         return $this->getIntValue(['parameters', 'parallelism'], 1);
     }
+
+    public function getSourceTimezone(): string
+    {
+        /** @var string $value */
+        $value = $this->getValue(['parameters', 'sourceTimezone'], 'America/Los_Angeles');
+        return $value;
+    }
 }
