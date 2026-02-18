@@ -29,7 +29,8 @@ class SapiMigrate implements MigrateInterface
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
-        private readonly string $sourceTimezone = 'America/Los_Angeles',
+        private readonly bool $convertTimestamps = false,
+        private readonly string $sourceTimezone = 'UTC',
     ) {
         $this->storageModifier = new StorageModifier($this->targetClient);
         $this->migrateGcsLargeTable = new MigrateGcsLargeTable(
@@ -37,6 +38,7 @@ class SapiMigrate implements MigrateInterface
             $this->targetClient,
             $this->logger,
             $this->dryRun,
+            $this->convertTimestamps,
             $this->sourceTimezone,
         );
     }
@@ -400,6 +402,9 @@ class SapiMigrate implements MigrateInterface
      */
     private function convertTimestampsInSlices(array $tableInfo, array $slicePaths): void
     {
+        if (!$this->convertTimestamps) {
+            return;
+        }
         $converter = $this->createTimestampConverter($tableInfo);
         if ($converter->hasTimestampColumns()) {
             assert(is_string($tableInfo['id']));
@@ -413,6 +418,9 @@ class SapiMigrate implements MigrateInterface
      */
     private function convertTimestampsInFile(array $tableInfo, string $filePath): void
     {
+        if (!$this->convertTimestamps) {
+            return;
+        }
         $converter = $this->createTimestampConverter($tableInfo);
         if ($converter->hasTimestampColumns()) {
             assert(is_string($tableInfo['id']));

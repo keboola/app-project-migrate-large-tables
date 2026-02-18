@@ -24,7 +24,8 @@ class MigrateGcsLargeTable
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
-        private readonly string $sourceTimezone = 'America/Los_Angeles',
+        private readonly bool $convertTimestamps = false,
+        private readonly string $sourceTimezone = 'UTC',
     ) {
     }
 
@@ -60,6 +61,14 @@ class MigrateGcsLargeTable
             ->setIsSliced(true)
         ;
 
+        /** @var string[] $columns */
+        $columns = $tableInfo['columns'];
+        /** @var array<string, array<int, array<string, string>>> $columnMetadata */
+        $columnMetadata = $tableInfo['columnMetadata'] ?? [];
+        $converter = $this->convertTimestamps
+            ? new TimestampConverter($columns, $columnMetadata, $this->sourceTimezone, $this->logger)
+            : null;
+
         foreach ($chunks as $chunkKey => $chunk) {
             $this->logger->info(sprintf('Processing %s/%s chunk', $chunkKey+1, count($chunks)));
             $slices = [];
@@ -78,13 +87,7 @@ class MigrateGcsLargeTable
                 $retBucket->object($blobPath[1])->downloadToFile($destinationFile);
             }
 
-            $converter = new TimestampConverter(
-                $tableInfo['columns'],
-                $tableInfo['columnMetadata'] ?? [],
-                $this->sourceTimezone,
-                $this->logger,
-            );
-            if ($converter->hasTimestampColumns()) {
+            if ($converter !== null && $converter->hasTimestampColumns()) {
                 $this->logger->info(sprintf(
                     'Converting timezone timestamps to UTC for table %s (chunk %d/%d)',
                     $tableInfo['id'],

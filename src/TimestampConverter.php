@@ -13,7 +13,6 @@ class TimestampConverter
 {
     private const TIMESTAMP_TYPES_WITH_TIMEZONE = [
         'TIMESTAMP_LTZ',
-        'TIMESTAMP_TZ',
     ];
 
     /** @var int[] */
@@ -60,6 +59,13 @@ class TimestampConverter
             throw new RuntimeException(sprintf('Cannot open file for writing: %s', $tempPath));
         }
 
+        $csvOutput = fopen('php://temp', 'w+');
+        if ($csvOutput === false) {
+            fclose($input);
+            gzclose($output);
+            throw new RuntimeException('Cannot open temp stream for CSV writing');
+        }
+
         $rowCount = 0;
         while (($row = fgetcsv($input, 0, ',', '"', '\\')) !== false) {
             foreach ($this->timestampColumnIndices as $idx) {
@@ -67,10 +73,18 @@ class TimestampConverter
                     $row[$idx] = $this->convertTimestamp($row[$idx]);
                 }
             }
-            gzwrite($output, $this->toCsvLine($row));
+            rewind($csvOutput);
+            ftruncate($csvOutput, 0);
+            fputcsv($csvOutput, $row, ',', '"', '\\');
+            rewind($csvOutput);
+            $csvLine = stream_get_contents($csvOutput);
+            if ($csvLine !== false) {
+                gzwrite($output, $csvLine);
+            }
             $rowCount++;
         }
 
+        fclose($csvOutput);
         fclose($input);
         gzclose($output);
 
@@ -136,33 +150,6 @@ class TimestampConverter
             return $dt->format('Y-m-d H:i:s');
         }
 
-        $this->logger->warning(sprintf('Cannot parse timestamp value: %s', $value));
-        return $value;
-    }
-
-    /**
-     * @param array<int, string|null> $fields
-     */
-    private function toCsvLine(array $fields): string
-    {
-        $parts = [];
-        foreach ($fields as $field) {
-            if ($field === null) {
-                $parts[] = '';
-            } elseif ($this->needsQuoting($field)) {
-                $parts[] = '"' . str_replace('"', '""', $field) . '"';
-            } else {
-                $parts[] = $field;
-            }
-        }
-        return implode(',', $parts) . "\n";
-    }
-
-    private function needsQuoting(string $field): bool
-    {
-        return str_contains($field, ',')
-            || str_contains($field, '"')
-            || str_contains($field, "\n")
-            || str_contains($field, "\r");
+        throw new RuntimeException(sprintf('Cannot parse timestamp value: %s', $value));
     }
 }
