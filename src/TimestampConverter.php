@@ -139,9 +139,11 @@ class TimestampConverter
             if ($dataIndex >= 0 && in_array($dataIndex, $this->timestampColumnIndices, true)) {
                 $selectExprs[] = sprintf(
                     'CASE WHEN %s IS NOT NULL AND %s != \'\'' .
-                    ' AND regexp_matches(%s, \' [+-]\\d{4}$\')' .
+                    ' AND regexp_matches(%s, \'[+-]\\d{2}:?\\d{2}$\')' .
                     ' THEN CAST(timezone(\'UTC\',' .
-                    ' regexp_replace(%s, \' ([+-])(\\d{2})(\\d{2})$\', \'\\1\\2:\\3\')::TIMESTAMPTZ) AS VARCHAR)' .
+                    ' regexp_replace(' .
+                    'regexp_replace(%s, \' ([+-]\\d{2}:?\\d{2})$\', \'\\1\'),' .
+                    ' \'([+-])(\\d{2})(\\d{2})$\', \'\\1\\2:\\3\')::TIMESTAMPTZ) AS VARCHAR)' .
                     ' WHEN %s IS NOT NULL AND %s != \'\'' .
                     ' AND TRY_CAST(%s AS TIMESTAMP) IS NOT NULL' .
                     ' THEN CAST(timezone(\'UTC\', timezone(\'%s\', %s::TIMESTAMP)) AS VARCHAR)' .
