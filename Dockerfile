@@ -81,7 +81,8 @@ RUN pecl install xdebug \
 ARG DUCKDB_VERSION=1.1.3
 ADD https://github.com/duckdb/duckdb/releases/download/v${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip /tmp/duckdb.zip
 RUN unzip /tmp/duckdb.zip -d /usr/local/bin/ && rm /tmp/duckdb.zip && chmod +x /usr/local/bin/duckdb \
-    && duckdb -c "INSTALL icu;"
+    && duckdb -c "INSTALL icu;" \
+    && mkdir -p /.duckdb && cp -r /root/.duckdb/* /.duckdb/ && chmod -R 777 /.duckdb
 
 ## Composer - deps always cached unless changed
 # First copy only composer files
