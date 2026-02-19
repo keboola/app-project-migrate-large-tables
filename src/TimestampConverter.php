@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Keboola\AppProjectMigrateLargeTables;
 
 use Psr\Log\LoggerInterface;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
 
 class TimestampConverter
@@ -188,9 +190,9 @@ class TimestampConverter
     private function recursiveCopy(string $source, string $destination): void
     {
         mkdir($destination, 0777, true);
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($source, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST,
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($source, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST,
         );
         foreach ($iterator as $item) {
             $target = $destination . '/' . $iterator->getSubPathname();
