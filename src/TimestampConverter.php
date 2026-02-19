@@ -8,6 +8,7 @@ use Psr\Log\LoggerInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+use SplFileInfo;
 
 class TimestampConverter
 {
@@ -195,6 +196,7 @@ class TimestampConverter
             RecursiveIteratorIterator::SELF_FIRST,
         );
         foreach ($iterator as $item) {
+            assert($item instanceof SplFileInfo);
             $target = $destination . '/' . $iterator->getSubPathname();
             if ($item->isDir()) {
                 if (!is_dir($target)) {
