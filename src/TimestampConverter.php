@@ -15,6 +15,7 @@ class TimestampConverter
     ];
 
     private const DUCKDB_BINARY = 'duckdb';
+    private const DUCKDB_EXTENSIONS_SOURCE = '/.duckdb';
 
     /** @var int[] */
     private array $timestampColumnIndices;
@@ -56,16 +57,23 @@ class TimestampConverter
 
         $this->logger->info(sprintf('Running DuckDB timestamp conversion on %s', basename($filePath)));
 
+        $duckDbHome = $this->ensureDuckDbHome();
+
         $descriptorspec = [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
 
+        $env = getenv();
+        $env['HOME'] = $duckDbHome;
+
         $process = proc_open(
             [self::DUCKDB_BINARY, '-c', $sql],
             $descriptorspec,
             $pipes,
+            null,
+            $env,
         );
 
         if (!is_resource($process)) {
@@ -162,6 +170,38 @@ class TimestampConverter
             implode(', ', $columnDefs),
             addcslashes($outputPath, "'"),
         );
+    }
+
+    private function ensureDuckDbHome(): string
+    {
+        $home = sys_get_temp_dir() . '/duckdb-home';
+        $targetDir = $home . '/.duckdb';
+        if (!is_dir($targetDir) && is_dir(self::DUCKDB_EXTENSIONS_SOURCE)) {
+            $this->recursiveCopy(self::DUCKDB_EXTENSIONS_SOURCE, $targetDir);
+        }
+        if (!is_dir($home)) {
+            mkdir($home, 0777, true);
+        }
+        return $home;
+    }
+
+    private function recursiveCopy(string $source, string $destination): void
+    {
+        mkdir($destination, 0777, true);
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($source, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST,
+        );
+        foreach ($iterator as $item) {
+            $target = $destination . '/' . $iterator->getSubPathname();
+            if ($item->isDir()) {
+                if (!is_dir($target)) {
+                    mkdir($target, 0777, true);
+                }
+            } else {
+                copy($item->getPathname(), $target);
+            }
+        }
     }
 
     /**
