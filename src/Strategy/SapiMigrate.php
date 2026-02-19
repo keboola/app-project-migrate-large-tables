@@ -399,8 +399,11 @@ class SapiMigrate implements MigrateInterface
      * @param array<string, mixed> $tableInfo
      * @param string[] $slicePaths
      */
-    private function convertTimestampsInSlices(array $tableInfo, array $slicePaths, bool $preserveTimestamp = false): void
-    {
+    private function convertTimestampsInSlices(
+        array $tableInfo,
+        array $slicePaths,
+        bool $preserveTimestamp = false,
+    ): void {
         $converter = $this->createTimestampConverter($tableInfo, $preserveTimestamp);
         if ($converter->hasTimestampColumns()) {
             assert(is_string($tableInfo['id']));
