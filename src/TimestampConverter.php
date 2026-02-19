@@ -152,7 +152,7 @@ class TimestampConverter
         }
 
         return sprintf(
-            'INSTALL icu; LOAD icu;'
+            'LOAD icu;'
             . ' COPY (SELECT %s FROM read_csv(\'%s\', header=false, columns={%s},'
             . ' auto_detect=false, compression=\'gzip\', quote=\'"\', escape=\'"\','
             . ' null_padding=true, ignore_errors=true))'
