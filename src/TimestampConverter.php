@@ -21,6 +21,7 @@ class TimestampConverter
     /** @var string[] */
     private array $columns;
     private string $sourceTimezoneStr;
+    private bool $hasInternalTimestamp;
 
     /**
      * @param string[] $columns
@@ -31,9 +32,11 @@ class TimestampConverter
         array $columnMetadata,
         string $sourceTimezone,
         private readonly LoggerInterface $logger,
+        bool $hasInternalTimestamp = false,
     ) {
         $this->columns = array_values($columns);
         $this->sourceTimezoneStr = $sourceTimezone;
+        $this->hasInternalTimestamp = $hasInternalTimestamp;
         $this->timestampColumnIndices = $this->detectTimestampColumns($this->columns, $columnMetadata);
     }
 
@@ -110,16 +113,19 @@ class TimestampConverter
     private function buildDuckDbQuery(string $inputPath, string $outputPath): string
     {
         $columnCount = count($this->columns);
+        $offset = $this->hasInternalTimestamp ? 1 : 0;
+        $totalCsvColumns = $columnCount + $offset;
 
         $columnDefs = [];
-        for ($i = 0; $i < $columnCount; $i++) {
+        for ($i = 0; $i < $totalCsvColumns; $i++) {
             $columnDefs[] = sprintf("'col_%d': 'VARCHAR'", $i);
         }
 
         $selectExprs = [];
-        for ($i = 0; $i < $columnCount; $i++) {
+        for ($i = 0; $i < $totalCsvColumns; $i++) {
             $colRef = sprintf('"col_%d"', $i);
-            if (in_array($i, $this->timestampColumnIndices, true)) {
+            $dataIndex = $i - $offset;
+            if ($dataIndex >= 0 && in_array($dataIndex, $this->timestampColumnIndices, true)) {
                 $selectExprs[] = sprintf(
                     'CASE WHEN %s IS NOT NULL AND %s != \'\'' .
                     ' AND TRY_CAST(%s AS TIMESTAMP) IS NOT NULL' .

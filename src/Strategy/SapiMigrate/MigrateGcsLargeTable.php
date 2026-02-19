@@ -83,6 +83,7 @@ class MigrateGcsLargeTable
                 $tableInfo['columnMetadata'] ?? [],
                 $this->sourceTimezone,
                 $this->logger,
+                $preserveTimestamp,
             );
             if ($converter->hasTimestampColumns()) {
                 $this->logger->info(sprintf(

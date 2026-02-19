@@ -242,7 +242,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $tableIdStr));
                 $slices = $this->sourceClient->downloadSlicedFile($sourceFileId, $tmp->getTmpFolder());
-                $this->convertTimestampsInSlices($tableInfo, $slices);
+                $this->convertTimestampsInSlices($tableInfo, $slices, $config->preserveTimestamp());
                 $this->logger->info(sprintf('Uploading table %s', $tableIdStr));
                 $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);
             } else {
@@ -255,7 +255,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $tableIdStr));
                 $this->sourceClient->downloadFile($sourceFileId, $fileName);
-                $this->convertTimestampsInFile($tableInfo, $fileName);
+                $this->convertTimestampsInFile($tableInfo, $fileName, $config->preserveTimestamp());
                 $this->logger->info(sprintf('Uploading table %s', $tableIdStr));
                 $destinationFileId = $this->targetClient->uploadFile($fileName, $optionUploadedFile);
             } else {
@@ -304,7 +304,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
                 $slices = $this->sourceClient->downloadSlicedFile($sourceFileId, $tmp->getTmpFolder());
-                $this->convertTimestampsInSlices($sourceTableInfo, $slices);
+                $this->convertTimestampsInSlices($sourceTableInfo, $slices, $config->preserveTimestamp());
 
                 $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
                 $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);
@@ -318,7 +318,7 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
                 $this->sourceClient->downloadFile($sourceFileId, $fileName);
-                $this->convertTimestampsInFile($sourceTableInfo, $fileName);
+                $this->convertTimestampsInFile($sourceTableInfo, $fileName, $config->preserveTimestamp());
 
                 $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
                 $destinationFileId = $this->targetClient->uploadFile($fileName, $optionUploadedFile);
@@ -380,7 +380,7 @@ class SapiMigrate implements MigrateInterface
     /**
      * @param array<string, mixed> $tableInfo
      */
-    private function createTimestampConverter(array $tableInfo): TimestampConverter
+    private function createTimestampConverter(array $tableInfo, bool $preserveTimestamp = false): TimestampConverter
     {
         /** @var string[] $columns */
         $columns = $tableInfo['columns'];
@@ -391,6 +391,7 @@ class SapiMigrate implements MigrateInterface
             $columnMetadata,
             $this->sourceTimezone,
             $this->logger,
+            $preserveTimestamp,
         );
     }
 
@@ -398,9 +399,9 @@ class SapiMigrate implements MigrateInterface
      * @param array<string, mixed> $tableInfo
      * @param string[] $slicePaths
      */
-    private function convertTimestampsInSlices(array $tableInfo, array $slicePaths): void
+    private function convertTimestampsInSlices(array $tableInfo, array $slicePaths, bool $preserveTimestamp = false): void
     {
-        $converter = $this->createTimestampConverter($tableInfo);
+        $converter = $this->createTimestampConverter($tableInfo, $preserveTimestamp);
         if ($converter->hasTimestampColumns()) {
             assert(is_string($tableInfo['id']));
             $this->logger->info(sprintf('Converting timezone timestamps to UTC for table %s', $tableInfo['id']));
@@ -411,9 +412,9 @@ class SapiMigrate implements MigrateInterface
     /**
      * @param array<string, mixed> $tableInfo
      */
-    private function convertTimestampsInFile(array $tableInfo, string $filePath): void
+    private function convertTimestampsInFile(array $tableInfo, string $filePath, bool $preserveTimestamp = false): void
     {
-        $converter = $this->createTimestampConverter($tableInfo);
+        $converter = $this->createTimestampConverter($tableInfo, $preserveTimestamp);
         if ($converter->hasTimestampColumns()) {
             assert(is_string($tableInfo['id']));
             $this->logger->info(sprintf('Converting timezone timestamps to UTC for table %s', $tableInfo['id']));
