@@ -120,7 +120,8 @@ class TimestampConverter
 
     private function buildDuckDbQuery(string $inputPath, string $outputPath): string
     {
-        $columnCount = count($this->columns);
+        $actualColumnCount = $this->detectCsvColumnCount($inputPath);
+        $columnCount = max($actualColumnCount, count($this->columns));
 
         $columnDefs = [];
         for ($i = 0; $i < $columnCount; $i++) {
@@ -167,6 +168,18 @@ class TimestampConverter
             implode(', ', $columnDefs),
             addcslashes($outputPath, "'"),
         );
+    }
+
+    private function detectCsvColumnCount(string $gzippedFilePath): int
+    {
+        $fh = gzopen($gzippedFilePath, 'rb');
+        if ($fh === false) {
+            throw new RuntimeException(sprintf('Cannot open gzipped file: %s', $gzippedFilePath));
+        }
+        $firstLine = (string) gzgets($fh);
+        gzclose($fh);
+        $row = str_getcsv($firstLine, ',', '"', '');
+        return count($row);
     }
 
     private function ensureDuckDbHome(): string

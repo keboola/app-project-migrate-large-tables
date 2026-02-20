@@ -214,6 +214,23 @@ class TimestampConverterTest extends TestCase
         self::assertSame('text with, comma', $rows[0][2]);
     }
 
+    public function testExtraColumnsInCsvBeyondMetadata(): void
+    {
+        $filePath = $this->createGzippedCsv([
+            ['1', '2024-11-14 23:43:22.000 -0800', 'hello', 'extra_value'],
+        ]);
+
+        $converter = $this->createConverter(['id', 'ts', 'name'], 'ts', 'TIMESTAMP_LTZ');
+        $converter->processGzippedFile($filePath);
+
+        $rows = $this->readGzippedCsv($filePath);
+        self::assertCount(1, $rows);
+        self::assertCount(4, $rows[0]);
+        self::assertSame('2024-11-15 07:43:22', $rows[0][1]);
+        self::assertSame('hello', $rows[0][2]);
+        self::assertSame('extra_value', $rows[0][3]);
+    }
+
     public function testProcessGzippedSlices(): void
     {
         $file1 = $this->createGzippedCsv([
