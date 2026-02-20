@@ -133,12 +133,12 @@ class TimestampConverter
             if (in_array($i, $this->timestampColumnIndices, true)) {
                 $selectExprs[] = sprintf(
                     'CASE WHEN %s IS NOT NULL AND %s != \'\''
-                    . ' THEN CAST(timezone(\'UTC\', COALESCE('
+                    . ' THEN COALESCE(CAST(timezone(\'UTC\', COALESCE('
                     . ' TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S.%%f %%z\'),'
                     . ' TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S %%z\'),'
                     . ' timezone(\'%s\', TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S.%%f\')),'
                     . ' timezone(\'%s\', TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S\'))'
-                    . ')) AS VARCHAR)'
+                    . ')) AS VARCHAR), %s)'
                     . ' ELSE %s END',
                     $colRef,
                     $colRef,
@@ -147,6 +147,7 @@ class TimestampConverter
                     $this->sourceTimezoneStr,
                     $colRef,
                     $this->sourceTimezoneStr,
+                    $colRef,
                     $colRef,
                     $colRef,
                 );
