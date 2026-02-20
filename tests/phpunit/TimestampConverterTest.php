@@ -137,6 +137,20 @@ class TimestampConverterTest extends TestCase
         self::assertSame('2024-11-14 23:43:22', $rows[0][1]);
     }
 
+    public function testSixDigitMicroseconds(): void
+    {
+        $filePath = $this->createGzippedCsv([
+            ['1', '2024-11-14 23:43:22.000000 -0800', 'hello'],
+        ]);
+
+        $converter = $this->createConverter(['id', 'ts', 'name'], 'ts', 'TIMESTAMP_LTZ');
+        $converter->processGzippedFile($filePath);
+
+        $rows = $this->readGzippedCsv($filePath);
+        self::assertCount(1, $rows);
+        self::assertSame('2024-11-15 07:43:22', $rows[0][1]);
+    }
+
     public function testNoFractionalSecondsWithOffset(): void
     {
         $filePath = $this->createGzippedCsv([

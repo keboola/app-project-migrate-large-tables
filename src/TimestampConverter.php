@@ -134,14 +134,17 @@ class TimestampConverter
                 $selectExprs[] = sprintf(
                     'CASE WHEN %s IS NOT NULL AND %s != \'\''
                     . ' THEN CAST(timezone(\'UTC\', COALESCE('
-                    . ' TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S.%%g %%z\'),'
+                    . ' TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S.%%f %%z\'),'
                     . ' TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S %%z\'),'
-                    . ' timezone(\'%s\', TRY_CAST(%s AS TIMESTAMP))'
+                    . ' timezone(\'%s\', TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S.%%f\')),'
+                    . ' timezone(\'%s\', TRY_STRPTIME(%s, \'%%Y-%%m-%%d %%H:%%M:%%S\'))'
                     . ')) AS VARCHAR)'
                     . ' ELSE %s END',
                     $colRef,
                     $colRef,
                     $colRef,
+                    $colRef,
+                    $this->sourceTimezoneStr,
                     $colRef,
                     $this->sourceTimezoneStr,
                     $colRef,
@@ -156,8 +159,8 @@ class TimestampConverter
             'LOAD icu;'
             . ' COPY (SELECT %s FROM read_csv(\'%s\', header=false, columns={%s},'
             . ' auto_detect=false, compression=\'gzip\', quote=\'"\', escape=\'"\','
-            . ' null_padding=true, ignore_errors=true))'
-            . ' TO \'%s\' (FORMAT CSV, HEADER false, COMPRESSION \'gzip\', QUOTE \'"\');',
+            . ' null_padding=true))'
+            . ' TO \'%s\' (FORMAT CSV, HEADER false, COMPRESSION \'gzip\', QUOTE \'"\', FORCE_QUOTE *);',
             implode(', ', $selectExprs),
             addcslashes($inputPath, "'"),
             implode(', ', $columnDefs),
