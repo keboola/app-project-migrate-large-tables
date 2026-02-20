@@ -161,7 +161,7 @@ class TimestampConverter
             'LOAD icu;'
             . ' COPY (SELECT %s FROM read_csv(\'%s\', header=false, columns={%s},'
             . ' auto_detect=false, compression=\'gzip\', quote=\'"\', escape=\'"\','
-            . ' null_padding=true))'
+            . ' null_padding=true, parallel=false))'
             . ' TO \'%s\' (FORMAT CSV, HEADER false, COMPRESSION \'gzip\', QUOTE \'"\', FORCE_QUOTE *);',
             implode(', ', $selectExprs),
             addcslashes($inputPath, "'"),
