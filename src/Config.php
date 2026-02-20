@@ -248,4 +248,16 @@ class Config extends BaseConfig
     {
         return (bool) $this->getValue(['parameters', 'migrateData'], true);
     }
+
+    public function getParallelism(): int
+    {
+        return $this->getIntValue(['parameters', 'parallelism'], 1);
+    }
+
+    public function getSourceTimezone(): string
+    {
+        /** @var string $value */
+        $value = $this->getValue(['parameters', 'sourceTimezone'], 'America/Los_Angeles');
+        return $value;
+    }
 }
