@@ -269,6 +269,32 @@ class TimestampConverterTest extends TestCase
         unlink($tmpFile2);
     }
 
+    public function testPreserveTimestampExtraColumnPassesThrough(): void
+    {
+        $inputCsv = '1,"2024-02-13 00:22:47.000","hello","2025-09-05 08:03:32"' . "\n";
+        $this->assertConversion(
+            $inputCsv,
+            ['id', 'created_at', 'name'],
+            ['created_at' => [['provider' => 'storage', 'key' => 'KBC.datatype.type', 'value' => 'TIMESTAMP_LTZ']]],
+            'America/Los_Angeles',
+            '1,"2024-02-13 08:22:47.000000",hello,"2025-09-05 08:03:32"' . "\n",
+        );
+    }
+
+    public function testCsvWithYamlLikeContentAndExtraTimestampColumn(): void
+    {
+        $yaml = '--- shop_id: 4d9ed867 url: https://api.example.com/data id: 94b2964a';
+        $inputCsv = '"5cc18522","StatisticsReport","update",,"' . $yaml
+            . '",,"2024-05-28 14:13:30","2025-09-05 08:03:32"' . "\n";
+        $this->assertConversion(
+            $inputCsv,
+            ['id', 'type', 'action', 'detail', 'metadata', 'extra', 'created_at'],
+            ['created_at' => [['provider' => 'storage', 'key' => 'KBC.datatype.type', 'value' => 'TIMESTAMP_LTZ']]],
+            'America/Los_Angeles',
+            '5cc18522,StatisticsReport,update,,"' . $yaml . '",,"2024-05-28 21:13:30","2025-09-05 08:03:32"' . "\n",
+        );
+    }
+
     public function testMultipleTimestampColumnsInSameRow(): void
     {
         $inputCsv = '1,"2024-01-15 10:00:00.000","hello","2024-06-15 14:00:00.000"' . "\n";
