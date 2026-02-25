@@ -7,7 +7,6 @@ namespace Keboola\AppProjectMigrateLargeTables\Strategy\SapiMigrate;
 use Google\Auth\FetchAuthTokenInterface;
 use Google\Cloud\Storage\StorageClient as GoogleStorageClient;
 use GuzzleHttp\Utils;
-use Keboola\AppProjectMigrateLargeTables\TimestampConverter;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\Options\FileUploadOptions;
 use Keboola\StorageApi\Options\GetFileOptions;
@@ -24,8 +23,6 @@ class MigrateGcsLargeTable
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
-        private readonly bool $convertTimestamps = false,
-        private readonly string $sourceTimezone = 'UTC',
     ) {
     }
 
@@ -61,14 +58,6 @@ class MigrateGcsLargeTable
             ->setIsSliced(true)
         ;
 
-        /** @var string[] $columns */
-        $columns = $tableInfo['columns'];
-        /** @var array<string, array<int, array<string, string>>> $columnMetadata */
-        $columnMetadata = $tableInfo['columnMetadata'] ?? [];
-        $converter = $this->convertTimestamps
-            ? new TimestampConverter($columns, $columnMetadata, $this->sourceTimezone, $this->logger)
-            : null;
-
         foreach ($chunks as $chunkKey => $chunk) {
             $this->logger->info(sprintf('Processing %s/%s chunk', $chunkKey+1, count($chunks)));
             $slices = [];
@@ -85,16 +74,6 @@ class MigrateGcsLargeTable
                 );
                 $blobPath = explode($sprintf, $entry['url']);
                 $retBucket->object($blobPath[1])->downloadToFile($destinationFile);
-            }
-
-            if ($converter !== null && $converter->hasTimestampColumns()) {
-                $this->logger->info(sprintf(
-                    'Converting timezone timestamps to UTC for table %s (chunk %d/%d)',
-                    $tableInfo['id'],
-                    $chunkKey + 1,
-                    count($chunks),
-                ));
-                $converter->processGzippedSlices($slices);
             }
 
             $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);

@@ -37,8 +37,6 @@ class Component extends BaseComponent
                     $targetSapiClient,
                     $this->getLogger(),
                     $this->getConfig()->isDryRun(),
-                    $this->getConfig()->shouldConvertTimestamps(),
-                    $this->getConfig()->getSourceTimezone(),
                 );
                 break;
             case 'database':

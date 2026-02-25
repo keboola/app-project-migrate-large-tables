@@ -253,16 +253,4 @@ class Config extends BaseConfig
     {
         return $this->getIntValue(['parameters', 'parallelism'], 1);
     }
-
-    public function shouldConvertTimestamps(): bool
-    {
-        return (bool) $this->getValue(['parameters', 'convertTimestamps'], false);
-    }
-
-    public function getSourceTimezone(): string
-    {
-        /** @var string $value */
-        $value = $this->getValue(['parameters', 'sourceTimezone'], 'UTC');
-        return $value;
-    }
 }
