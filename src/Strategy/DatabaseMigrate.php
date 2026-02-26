@@ -115,12 +115,15 @@ class DatabaseMigrate implements MigrateInterface
                 }
             }
 
-            $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            $this->migrateSchema($config->getMigrateTables(), $schemaName, $config->forcePrimaryKeyNotNull());
         }
     }
 
-    private function migrateSchema(array $tablesWhiteList, string $schemaName): void
-    {
+    private function migrateSchema(
+        array $tablesWhiteList,
+        string $schemaName,
+        bool $forcePrimaryKeyNotNull = false,
+    ): void {
         $this->logger->info(sprintf('Migrating schema %s', $schemaName));
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
@@ -146,6 +149,7 @@ class DatabaseMigrate implements MigrateInterface
                 $this->logger->info(sprintf('Creating table "%s".', $tableId));
                 $this->storageModifier->createTable(
                     $this->sourceSapiClient->getTable($tableId),
+                    $forcePrimaryKeyNotNull,
                 );
             }
 
