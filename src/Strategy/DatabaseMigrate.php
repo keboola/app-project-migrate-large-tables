@@ -134,11 +134,13 @@ class DatabaseMigrate implements MigrateInterface
         ));
         $this->targetConnection->useRole($currentRole);
 
+        $hasProcessedTable = false;
         foreach ($tables as $table) {
             $tableId = sprintf('%s.%s', $schemaName, $table['name']);
             if ($tablesWhiteList && !in_array($tableId, $tablesWhiteList, true)) {
                 continue;
             }
+            $hasProcessedTable = true;
 
             if ($this->dryRun) {
                 $this->logger->info(sprintf('[dry-run] Migrating table %s.%s', $schemaName, $table['name']));
@@ -154,6 +156,10 @@ class DatabaseMigrate implements MigrateInterface
             }
 
             $this->migrateTable($schemaName, $table['name']);
+        }
+
+        if (!$hasProcessedTable) {
+            return;
         }
 
         if ($this->dryRun === false) {
