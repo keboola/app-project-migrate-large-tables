@@ -93,7 +93,7 @@ class SapiMigrate implements MigrateInterface
                     $this->logger->info(sprintf('[dry-run] Creating table %s', $tableInfo['id']));
                 } else {
                     $this->logger->info(sprintf('Creating table %s', $tableInfo['id']));
-                    $this->storageModifier->createTable($tableInfo);
+                    $this->storageModifier->createTable($tableInfo, $config->forcePrimaryKeyNotNull());
                 }
             }
             $tablesToMigrate[] = $tableInfo;
@@ -133,6 +133,7 @@ class SapiMigrate implements MigrateInterface
             $jobId = $this->sourceClient->queueTableExport($tableId, [
                 'gzip' => true,
                 'includeInternalTimestamp' => $config->preserveTimestamp(),
+                'timezone' => 'UTC',
             ]);
             $exportJobs[$tableId] = [
                 'jobId' => $jobId,
@@ -269,6 +270,7 @@ class SapiMigrate implements MigrateInterface
         $file = $this->sourceClient->exportTableAsync($sourceTableInfo['id'], [
             'gzip' => true,
             'includeInternalTimestamp' => $config->preserveTimestamp(),
+            'timezone' => 'UTC',
         ]);
 
         $sourceFileId = $file['file']['id'];
@@ -299,7 +301,6 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
                 $slices = $this->sourceClient->downloadSlicedFile($sourceFileId, $tmp->getTmpFolder());
-
                 $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
                 $destinationFileId = $this->targetClient->uploadSlicedFile($slices, $optionUploadedFile);
             } else {
@@ -312,7 +313,6 @@ class SapiMigrate implements MigrateInterface
             if ($this->dryRun === false) {
                 $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
                 $this->sourceClient->downloadFile($sourceFileId, $fileName);
-
                 $this->logger->info(sprintf('Uploading table %s', $sourceTableInfo['id']));
                 $destinationFileId = $this->targetClient->uploadFile($fileName, $optionUploadedFile);
             } else {

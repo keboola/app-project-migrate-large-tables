@@ -36,10 +36,10 @@ class StorageModifier
         $this->client->createBucket($bucketName, $bucketStage);
     }
 
-    public function createTable(array $tableInfo): void
+    public function createTable(array $tableInfo, bool $forcePrimaryKeyNotNull = false): void
     {
         if ($tableInfo['isTyped']) {
-            $this->createTypedTable($tableInfo);
+            $this->createTypedTable($tableInfo, $forcePrimaryKeyNotNull);
         } else {
             $this->createNonTypedTable($tableInfo);
         }
@@ -63,10 +63,11 @@ class StorageModifier
         );
     }
 
-    private function createTypedTable(array $tableInfo): void
+    private function createTypedTable(array $tableInfo, bool $forcePrimaryKeyNotNull = false): void
     {
         $sourceBackendType = $tableInfo['bucket']['backend'];
         $destinationBackendType = $this->getDestinationBucketBackend($tableInfo['bucket']['id']);
+        $primaryKeyColumns = $tableInfo['primaryKey'] ?? [];
         $columns = [];
         foreach ($tableInfo['columns'] as $column) {
             $columns[$column] = [];
@@ -111,6 +112,9 @@ class StorageModifier
                 if (isset($columnMetadata['KBC.datatype.default'])) {
                     $definition['default'] = $columnMetadata['KBC.datatype.default'];
                 }
+            }
+            if ($forcePrimaryKeyNotNull && in_array($columnName, $primaryKeyColumns, true)) {
+                $definition['nullable'] = false;
             }
             $columns[$columnName] = [
                 'name' => $columnName,
