@@ -7,7 +7,7 @@
         "keboola/db-adapter-snowflake": "^1.5",
         "keboola/php-component": "^9.4",
         "keboola/php-datatypes": "^9.0",
-        "keboola/storage-api-client": "dev-master"
+        "keboola/storage-api-client": "^18.7"
     },
     "require-dev": {
         "cweagans/composer-patches": "^1.7",
@@ -55,8 +55,6 @@
             "@build"
         ]
     },
-    "minimum-stability": "dev",
-    "prefer-stable": true,
     "config": {
         "sort-packages": true,
         "optimize-autoloader": true,

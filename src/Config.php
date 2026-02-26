@@ -253,4 +253,9 @@ class Config extends BaseConfig
     {
         return $this->getIntValue(['parameters', 'parallelism'], 1);
     }
+
+    public function forcePrimaryKeyNotNull(): bool
+    {
+        return (bool) $this->getValue(['parameters', 'forcePrimaryKeyNotNull']);
+    }
 }

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "402693b9cf8886dc3ce69d4a0157fc5d",
+    "content-hash": "7ae30afd9a474ea6b00a90900075b169",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -1323,7 +1323,7 @@
         },
         {
             "name": "keboola/storage-api-client",
-            "version": "dev-master",
+            "version": "v18.7.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/keboola/storage-api-php-client.git",
@@ -1351,7 +1351,6 @@
                 "ext-curl": "*",
                 "phpunit/phpunit": "^9.0|^10"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "files": [
@@ -1369,7 +1368,7 @@
             "homepage": "http://keboola.com",
             "support": {
                 "issues": "https://github.com/keboola/storage-api-php-client/issues",
-                "source": "https://github.com/keboola/storage-api-php-client/tree/master"
+                "source": "https://github.com/keboola/storage-api-php-client/tree/v18.7.0"
             },
             "time": "2026-02-26T08:21:47+00:00"
         },
@@ -5278,11 +5277,9 @@
         }
     ],
     "aliases": [],
-    "minimum-stability": "dev",
-    "stability-flags": {
-        "keboola/storage-api-client": 20
-    },
-    "prefer-stable": true,
+    "minimum-stability": "stable",
+    "stability-flags": {},
+    "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
         "php": "^8.2"
