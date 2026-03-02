@@ -188,16 +188,25 @@ class DatabaseMigrate implements MigrateInterface
             $sourceTableId = sprintf('%s.%s', $sourceSapiBucketId, $table['name']);
             $targetTableId = sprintf('%s.%s', $targetSapiBucketId, $table['name']);
 
-            if (!$this->targetSapiClient->tableExists($targetTableId)) {
-                $this->logger->info(sprintf('Creating table "%s".', $targetTableId));
-                $tableInfo = $this->sourceSapiClient->getTable($sourceTableId);
-                // Override bucket ID and table ID to match the target bucket
-                $tableInfo['bucket']['id'] = $targetSapiBucketId;
-                $tableInfo['id'] = $targetTableId;
-                $this->storageModifier->createTable($tableInfo);
-            }
+            try {
+                if (!$this->targetSapiClient->tableExists($targetTableId)) {
+                    $this->logger->info(sprintf('Creating table "%s".', $targetTableId));
+                    $tableInfo = $this->sourceSapiClient->getTable($sourceTableId);
+                    // Override bucket ID and table ID to match the target bucket
+                    $tableInfo['bucket']['id'] = $targetSapiBucketId;
+                    $tableInfo['id'] = $targetTableId;
+                    $this->storageModifier->createTable($tableInfo);
+                }
 
-            $this->migrateTable($replicaSchemaName, $targetSchemaName, $table['name']);
+                $this->migrateTable($replicaSchemaName, $targetSchemaName, $table['name']);
+            } catch (\Throwable $e) {
+                $this->logger->warning(sprintf(
+                    'Error while processing table %s.%s: %s',
+                    $replicaSchemaName,
+                    $table['name'],
+                    $e->getMessage(),
+                ));
+            }
         }
 
         if ($this->dryRun === false) {
