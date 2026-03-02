@@ -199,7 +199,7 @@ class DatabaseMigrate implements MigrateInterface
                 }
 
                 $this->migrateTable($replicaSchemaName, $targetSchemaName, $table['name']);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 $this->logger->warning(sprintf(
                     'Error while processing table %s.%s: %s',
                     $replicaSchemaName,
