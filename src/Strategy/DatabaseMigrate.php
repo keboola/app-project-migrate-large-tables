@@ -233,8 +233,17 @@ class DatabaseMigrate implements MigrateInterface
             $tableRole,
         );
 
-        // Get columns from the target database schema
-        $columns = $this->targetConnection->getTableColumns($targetSchemaName, $tableName);
+        // Get columns from the replica database schema (source of data).
+        // Workspace schema tables in the replica don't have SAPI system columns like "_timestamp",
+        // while the target tables (created by SAPI) do. Using replica columns ensures the
+        // INSERT INTO ... SELECT FROM query only references columns that exist in both.
+        $replicaColumnsRaw = $this->targetConnection->fetchAll(sprintf(
+            'SHOW COLUMNS IN %s.%s.%s',
+            QueryBuilder::quoteIdentifier($this->replicaDatabase),
+            QueryBuilder::quoteIdentifier($replicaSchemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+        ));
+        $columns = array_map(fn($col) => $col['column_name'], $replicaColumnsRaw);
 
         $compareTimestamp = $this->compareTableMaxTimestamp(
             'ACCOUNTADMIN',
