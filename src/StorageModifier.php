@@ -21,7 +21,7 @@ class StorageModifier
         $this->tmp = new Temp();
     }
 
-    public function createBucket(string $schemaName): void
+    public function createBucket(string $schemaName): string
     {
         $parts = explode('.', $schemaName);
         if (count($parts) === 2) {
@@ -35,7 +35,7 @@ class StorageModifier
         if (str_starts_with($bucketName, 'c-')) {
             $bucketName = substr($bucketName, 2);
         }
-        $this->client->createBucket($bucketName, $bucketStage);
+        return $this->client->createBucket($bucketName, $bucketStage);
     }
 
     public function createTable(array $tableInfo): void
