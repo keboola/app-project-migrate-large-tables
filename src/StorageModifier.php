@@ -23,7 +23,15 @@ class StorageModifier
 
     public function createBucket(string $schemaName): void
     {
-        [$bucketStage, $bucketName] = explode('.', $schemaName);
+        $parts = explode('.', $schemaName);
+        if (count($parts) === 2) {
+            [$bucketStage, $bucketName] = $parts;
+        } else {
+            // Workspace schemas (e.g. "WORKSPACE_1166207470") don't have a dot separator,
+            // default to "in" stage
+            $bucketStage = 'in';
+            $bucketName = $schemaName;
+        }
         if (str_starts_with($bucketName, 'c-')) {
             $bucketName = substr($bucketName, 2);
         }
