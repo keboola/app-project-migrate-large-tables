@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Keboola\AppProjectMigrateLargeTables;
 
 use Keboola\Csv\CsvFile;
+use Keboola\Datatype\Definition\BaseType;
+use Keboola\Datatype\Definition\Bigquery;
+use Keboola\Datatype\Definition\Snowflake;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\ClientException;
 use Keboola\StorageApi\Exception as StorageApiException;
@@ -15,6 +18,9 @@ use Keboola\Temp\Temp;
 class StorageModifier
 {
     private Temp $tmp;
+
+    /** @var array<string, string> */
+    private array $bucketBackendCache = [];
 
     public function __construct(readonly Client $client)
     {
@@ -59,45 +65,44 @@ class StorageModifier
 
     private function createTypedTable(array $tableInfo): void
     {
+        $sourceBackend = $tableInfo['bucket']['backend'];
+        $destinationBackend = $this->getDestinationBucketBackend($tableInfo['bucket']['id']);
+
         $columns = [];
-        foreach ($tableInfo['columns'] as $column) {
-            $columns[$column] = [];
-        }
-        foreach ($tableInfo['columnMetadata'] ?? [] as $columnName => $column) {
-            $columnName = (string) $columnName;
-            $columnMetadata = [];
-            foreach ($column as $metadata) {
-                if ($metadata['provider'] !== 'storage') {
-                    continue;
+        foreach ($tableInfo['definition']['columns'] as $columnDef) {
+            $columnName = $columnDef['name'];
+            $basetype = $columnDef['basetype'] ?? null;
+            $nullable = (bool) $columnDef['definition']['nullable'];
+
+            if ($sourceBackend !== $destinationBackend) {
+                $definition = $this->buildCrossBackendDefinition($destinationBackend, $basetype, $nullable);
+            } else {
+                $definition = [
+                    'type' => $columnDef['definition']['type'],
+                    'nullable' => $nullable,
+                ];
+                if (isset($columnDef['definition']['length'])) {
+                    $definition['length'] = $columnDef['definition']['length'];
                 }
-                $columnMetadata[$metadata['key']] = $metadata['value'];
+                if (isset($columnDef['definition']['default'])) {
+                    $definition['default'] = $columnDef['definition']['default'];
+                }
             }
 
-            $definition = [
-                'type' => $columnMetadata['KBC.datatype.type'],
-                'nullable' => $columnMetadata['KBC.datatype.nullable'] === '1',
-            ];
-            if (isset($columnMetadata['KBC.datatype.length'])) {
-                $definition['length'] = $columnMetadata['KBC.datatype.length'];
-            }
-            if (isset($columnMetadata['KBC.datatype.default'])) {
-                $definition['default'] = $columnMetadata['KBC.datatype.default'];
-            }
-
-            $columns[$columnName] = [
+            $columns[] = [
                 'name' => $columnName,
                 'definition' => $definition,
-                'basetype' => $columnMetadata['KBC.datatype.basetype'],
+                'basetype' => $basetype,
             ];
         }
 
         $data = [
             'name' => $tableInfo['name'],
             'primaryKeysNames' => $tableInfo['primaryKey'],
-            'columns' => array_values($columns),
+            'columns' => $columns,
         ];
 
-        if ($tableInfo['bucket']['backend'] === 'synapse') {
+        if ($sourceBackend === 'synapse') {
             $data['distribution'] = [
                 'type' => $tableInfo['distributionType'],
                 'distributionColumnsNames' => $tableInfo['distributionKey'],
@@ -123,6 +128,34 @@ class StorageModifier
             }
             throw $e;
         }
+    }
+
+    private function buildCrossBackendDefinition(string $destinationBackend, ?string $basetype, bool $nullable): array
+    {
+        $effectiveBasetype = ($basetype !== null && BaseType::isValid(strtoupper($basetype)))
+            ? strtoupper($basetype)
+            : BaseType::STRING;
+
+        $nativeType = match ($destinationBackend) {
+            'bigquery' => Bigquery::getTypeByBasetype($effectiveBasetype),
+            'snowflake' => Snowflake::getTypeByBasetype($effectiveBasetype),
+            default => $effectiveBasetype,
+        };
+
+        return [
+            'type' => $nativeType,
+            'nullable' => $nullable,
+        ];
+    }
+
+    private function getDestinationBucketBackend(string $bucketId): string
+    {
+        if (!array_key_exists($bucketId, $this->bucketBackendCache)) {
+            $bucket = $this->client->getBucket($bucketId);
+            $this->bucketBackendCache[$bucketId] = $bucket['backend'];
+        }
+
+        return $this->bucketBackendCache[$bucketId];
     }
 
     private function restoreTableColumnsMetadata(array $tableInfo, string $tableId, Metadata $metadataClient): void
