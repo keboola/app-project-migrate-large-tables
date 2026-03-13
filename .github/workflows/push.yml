@@ -1,7 +1,9 @@
 name: 'GitHub Actions'
 'on':
     - push
-concurrency: 'ci-${{ github.ref }}'
+concurrency:
+    group: 'ci'
+    cancel-in-progress: false
 env:
     APP_IMAGE: app-project-migrate-large-tables
     KBC_DEVELOPERPORTAL_VENDOR: keboola
