@@ -76,17 +76,28 @@ class MigrateGcsLargeTable
         $targetApiUrl = $this->targetClient->getApiUrl();
         $targetToken = $this->targetClient->getTokenString();
 
+        $primaryKey = $tableInfo['primaryKey'] ?? [];
+        if (!empty($primaryKey)) {
+            $this->logger->info(sprintf(
+                'Removing primary key [%s] from %s before import',
+                implode(', ', $primaryKey),
+                $tableInfo['id'],
+            ));
+            $this->targetClient->removeTablePrimaryKey($tableInfo['id']);
+        }
+
         $pool = Pool::create()->concurrency($this->maxParallelism);
         $errors = [];
 
-        foreach ($chunks as $chunkKey => $chunk) {
-            $chunkNum = $chunkKey + 1;
-            $this->logger->info(sprintf('Queuing chunk %d/%d (%d slices)', $chunkNum, $totalChunks, count($chunk)));
+        try {
+            foreach ($chunks as $chunkKey => $chunk) {
+                $chunkNum = $chunkKey + 1;
+                $this->logger->info(sprintf('Queuing chunk %d/%d (%d slices)', $chunkNum, $totalChunks, count($chunk)));
 
             // Child process: download from GCS + upload to SAPI + trigger import.
             // Running the import inside the child keeps ->then() lightweight so the
             // pool loop is never blocked and other children can run concurrently.
-            $pool
+                $pool
                 ->add(static function () use (
                     $chunk,
                     $fileId,
@@ -210,10 +221,20 @@ class MigrateGcsLargeTable
                     ));
                     $errors[$chunkKey] = $e;
                 });
-        }
+            }
 
-        $pool->wait();
-        $this->logger->info(sprintf('All %d chunks processed', $totalChunks));
+            $pool->wait();
+            $this->logger->info(sprintf('All %d chunks processed', $totalChunks));
+        } finally {
+            if (!empty($primaryKey)) {
+                $this->logger->info(sprintf(
+                    'Restoring primary key [%s] on %s',
+                    implode(', ', $primaryKey),
+                    $tableInfo['id'],
+                ));
+                $this->targetClient->createTablePrimaryKey($tableInfo['id'], $primaryKey);
+            }
+        }
 
         if (!empty($errors)) {
             $firstError = reset($errors);
