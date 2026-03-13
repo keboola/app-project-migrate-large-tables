@@ -97,8 +97,6 @@ class MigrateGcsLargeTable
                     $sourceToken,
                     $targetApiUrl,
                     $targetToken,
-                    $tableInfo,
-                    $preserveTimestamp,
                     $chunkNum,
                     $totalChunks,
                 ): array {
@@ -170,36 +168,37 @@ class MigrateGcsLargeTable
                         $destinationFileId,
                     );
 
-                    $logs[] = sprintf(
-                        'Chunk %d/%d: importing into table %s',
+                    // Temp destructor handles cleanup when the child process exits
+                    unset($chunkTmpFolder);
+
+                    return ['logs' => $logs, 'fileId' => (string) $destinationFileId];
+                })
+                ->then(function (array $result) use (
+                    $chunkNum,
+                    $totalChunks,
+                    $tableInfo,
+                    $preserveTimestamp,
+                ): void {
+                    foreach ($result['logs'] as $message) {
+                        $this->logger->info($message);
+                    }
+                    $this->logger->info(sprintf(
+                        'Chunk %d/%d: importing into table %s (fileId: %s)',
                         $chunkNum,
                         $totalChunks,
                         $tableInfo['id'],
-                    );
-                    $targetClient->writeTableAsyncDirect(
+                        $result['fileId'],
+                    ));
+                    $this->targetClient->writeTableAsyncDirect(
                         $tableInfo['id'],
                         [
                             'name' => $tableInfo['name'],
-                            'dataFileId' => $destinationFileId,
+                            'dataFileId' => $result['fileId'],
                             'columns' => $tableInfo['columns'],
                             'useTimestampFromDataFile' => $preserveTimestamp,
                             'incremental' => true,
                         ],
                     );
-                    $logs[] = sprintf('Chunk %d/%d: import done', $chunkNum, $totalChunks);
-
-                    $fs = new Filesystem();
-                    foreach ($slices as $slice) {
-                        $fs->remove($slice);
-                    }
-                    $chunkTmpFolder->remove();
-
-                    return $logs;
-                })
-                ->then(function (array $logs) use ($chunkNum, $totalChunks): void {
-                    foreach ($logs as $message) {
-                        $this->logger->info($message);
-                    }
                     $this->logger->info(sprintf('Finished chunk %d/%d', $chunkNum, $totalChunks));
                 })
                 ->catch(function (Throwable $e) use ($chunkKey, $chunkNum, $totalChunks, &$errors): void {
