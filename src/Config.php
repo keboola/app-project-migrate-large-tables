@@ -251,6 +251,6 @@ class Config extends BaseConfig
 
     public function getParallelChunks(): int
     {
-        return $this->getIntValue(['parameters', 'parallelChunks'], 3);
+        return $this->getIntValue(['parameters', 'parallelChunks'], 2);
     }
 }
