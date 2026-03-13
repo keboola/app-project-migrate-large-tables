@@ -74,6 +74,8 @@ DriverODBCVer=$SNOWFLAKE_ODBC_VERSION
 SQLLevel=1
 EOF
 
+RUN docker-php-ext-install pcntl
+
 RUN pecl install xdebug \
     && docker-php-ext-enable xdebug
 

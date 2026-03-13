@@ -248,4 +248,9 @@ class Config extends BaseConfig
     {
         return (bool) $this->getValue(['parameters', 'migrateData'], true);
     }
+
+    public function getParallelChunks(): int
+    {
+        return $this->getIntValue(['parameters', 'parallelChunks'], 4);
+    }
 }
