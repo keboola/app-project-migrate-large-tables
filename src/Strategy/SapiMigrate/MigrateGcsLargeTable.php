@@ -80,21 +80,25 @@ class MigrateGcsLargeTable
         $errors = [];
 
         foreach ($chunks as $chunkKey => $chunk) {
-            // static function prevents implicit $this binding
+            $chunkNum = $chunkKey + 1;
+            $this->logger->info(sprintf('Queuing chunk %d/%d (%d slices)', $chunkNum, $totalChunks, count($chunk)));
+
+            // Child process: download from GCS + upload to SAPI file storage.
+            // Returns $destinationFileId to the parent via ->then().
+            // ->then() runs in the parent and triggers the table import,
+            // so imports are serialized while uploads run in parallel.
             $pool
                 ->add(static function () use (
                     $chunk,
                     $fileId,
                     $bucket,
                     $fileInfo,
-                    $tableInfo,
                     $optionUploadedFile,
-                    $preserveTimestamp,
                     $sourceApiUrl,
                     $sourceToken,
                     $targetApiUrl,
                     $targetToken,
-                ): void {
+                ): string {
                     $sourceClient = new Client(['url' => $sourceApiUrl, 'token' => $sourceToken]);
                     $targetClient = new Client(['url' => $targetApiUrl, 'token' => $targetToken]);
 
@@ -148,7 +152,28 @@ class MigrateGcsLargeTable
 
                     $destinationFileId = $targetClient->uploadSlicedFile($slices, $optionUploadedFile);
 
-                    $targetClient->writeTableAsyncDirect(
+                    $fs = new Filesystem();
+                    foreach ($slices as $slice) {
+                        $fs->remove($slice);
+                    }
+                    $chunkTmpFolder->remove();
+
+                    return (string) $destinationFileId;
+                })
+                ->then(function (string $destinationFileId) use (
+                    $chunkNum,
+                    $totalChunks,
+                    $tableInfo,
+                    $preserveTimestamp,
+                ): void {
+                    // Runs in parent process — imports are naturally serialized here
+                    $this->logger->info(sprintf(
+                        'Importing chunk %d/%d (fileId: %s)',
+                        $chunkNum,
+                        $totalChunks,
+                        $destinationFileId,
+                    ));
+                    $this->targetClient->writeTableAsyncDirect(
                         $tableInfo['id'],
                         [
                             'name' => $tableInfo['name'],
@@ -158,19 +183,21 @@ class MigrateGcsLargeTable
                             'incremental' => true,
                         ],
                     );
-
-                    $fs = new Filesystem();
-                    foreach ($slices as $slice) {
-                        $fs->remove($slice);
-                    }
-                    $chunkTmpFolder->remove();
+                    $this->logger->info(sprintf('Finished chunk %d/%d', $chunkNum, $totalChunks));
                 })
-                ->catch(function (Throwable $e) use ($chunkKey, &$errors): void {
+                ->catch(function (Throwable $e) use ($chunkKey, $chunkNum, $totalChunks, &$errors): void {
+                    $this->logger->error(sprintf(
+                        'Failed chunk %d/%d: %s',
+                        $chunkNum,
+                        $totalChunks,
+                        $e->getMessage(),
+                    ));
                     $errors[$chunkKey] = $e;
                 });
         }
 
         $pool->wait();
+        $this->logger->info(sprintf('All %d chunks processed', $totalChunks));
 
         if (!empty($errors)) {
             $firstError = reset($errors);
