@@ -19,7 +19,7 @@ use Throwable;
 
 class MigrateGcsLargeTable
 {
-    private const CHUNK_SIZE = 100;
+    private const CHUNK_SIZE = 10;
 
     public function __construct(
         private readonly Client $sourceClient,
@@ -99,11 +99,15 @@ class MigrateGcsLargeTable
                     $targetToken,
                     $tableInfo,
                     $preserveTimestamp,
-                ): void {
+                    $chunkNum,
+                    $totalChunks,
+                ): array {
+                    $logs = [];
                     $sourceClient = new Client(['url' => $sourceApiUrl, 'token' => $sourceToken]);
                     $targetClient = new Client(['url' => $targetApiUrl, 'token' => $targetToken]);
 
                     // Refresh GCS credentials for each chunk
+                    $logs[] = sprintf('Chunk %d/%d: refreshing GCS credentials', $chunkNum, $totalChunks);
                     $chunkFileInfo = $sourceClient->getFile(
                         $fileId,
                         (new GetFileOptions())->setFederationToken(true),
@@ -144,6 +148,12 @@ class MigrateGcsLargeTable
                     $chunkTmpFolder = new Temp();
                     $slices = [];
 
+                    $logs[] = sprintf(
+                        'Chunk %d/%d: downloading %d slices from GCS',
+                        $chunkNum,
+                        $totalChunks,
+                        count($chunk),
+                    );
                     /** @var array{"url": string} $entry */
                     foreach ($chunk as $entry) {
                         $slices[] = $destinationFile = $chunkTmpFolder->getTmpFolder() . '/' . basename($entry['url']);
@@ -151,14 +161,21 @@ class MigrateGcsLargeTable
                         $retBucket->object($blobPath[1])->downloadToFile($destinationFile);
                     }
 
+                    $logs[] = sprintf('Chunk %d/%d: uploading to SAPI file storage', $chunkNum, $totalChunks);
                     $destinationFileId = $targetClient->uploadSlicedFile($slices, $optionUploadedFile);
+                    $logs[] = sprintf(
+                        'Chunk %d/%d: uploaded (fileId: %d)',
+                        $chunkNum,
+                        $totalChunks,
+                        $destinationFileId,
+                    );
 
-                    $fs = new Filesystem();
-                    foreach ($slices as $slice) {
-                        $fs->remove($slice);
-                    }
-                    $chunkTmpFolder->remove();
-
+                    $logs[] = sprintf(
+                        'Chunk %d/%d: importing into table %s',
+                        $chunkNum,
+                        $totalChunks,
+                        $tableInfo['id'],
+                    );
                     $targetClient->writeTableAsyncDirect(
                         $tableInfo['id'],
                         [
@@ -169,8 +186,20 @@ class MigrateGcsLargeTable
                             'incremental' => true,
                         ],
                     );
+                    $logs[] = sprintf('Chunk %d/%d: import done', $chunkNum, $totalChunks);
+
+                    $fs = new Filesystem();
+                    foreach ($slices as $slice) {
+                        $fs->remove($slice);
+                    }
+                    $chunkTmpFolder->remove();
+
+                    return $logs;
                 })
-                ->then(function () use ($chunkNum, $totalChunks): void {
+                ->then(function (array $logs) use ($chunkNum, $totalChunks): void {
+                    foreach ($logs as $message) {
+                        $this->logger->info($message);
+                    }
                     $this->logger->info(sprintf('Finished chunk %d/%d', $chunkNum, $totalChunks));
                 })
                 ->catch(function (Throwable $e) use ($chunkKey, $chunkNum, $totalChunks, &$errors): void {
