@@ -19,7 +19,7 @@ use Throwable;
 
 class MigrateGcsLargeTable
 {
-    private const CHUNK_SIZE = 100;
+    private const CHUNK_SIZE = 50;
 
     public function __construct(
         private readonly Client $sourceClient,

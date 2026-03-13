@@ -27,7 +27,7 @@ class ConfigDefinition extends BaseConfigDefinition
                 ->booleanNode('preserveTimestamp')->defaultFalse()->end()
                 ->arrayNode('tables')->prototype('scalar')->end()->end()
                 ->booleanNode('migrateData')->defaultTrue()->end()
-                ->integerNode('parallelChunks')->defaultValue(4)->min(1)->max(20)->end()
+                ->integerNode('parallelChunks')->defaultValue(3)->min(1)->max(20)->end()
                 ->arrayNode('replica')
                     ->children()
                         ->booleanNode('create')->defaultTrue()->end()
