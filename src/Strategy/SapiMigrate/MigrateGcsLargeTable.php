@@ -76,7 +76,8 @@ class MigrateGcsLargeTable
         $targetApiUrl = $this->targetClient->getApiUrl();
         $targetToken = $this->targetClient->getTokenString();
 
-        $primaryKey = $tableInfo['primaryKey'] ?? [];
+        $targetTableInfo = $this->targetClient->getTable($tableInfo['id']);
+        $primaryKey = $targetTableInfo['primaryKey'] ?? [];
         if (!empty($primaryKey)) {
             $this->logger->info(sprintf(
                 'Removing primary key [%s] from %s before import',
