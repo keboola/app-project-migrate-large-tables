@@ -180,8 +180,9 @@ class MigrateGcsLargeTable
                         $destinationFileId,
                     );
 
-                    // Temp destructor handles cleanup when the child process exits
-                    unset($chunkTmpFolder);
+                    $fs = new Filesystem();
+                    $fs->remove($slices);
+                    $chunkTmpFolder->remove();
 
                     return ['logs' => $logs, 'fileId' => (string) $destinationFileId];
                 })
