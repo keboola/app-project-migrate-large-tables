@@ -8,14 +8,10 @@ use Google\Auth\FetchAuthTokenInterface;
 use Google\Cloud\Storage\StorageClient as GoogleStorageClient;
 use GuzzleHttp\Utils;
 use Keboola\StorageApi\Client;
-use Keboola\StorageApi\Options\FileUploadOptions;
 use Keboola\StorageApi\Options\GetFileOptions;
-use Keboola\Temp\Temp;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
-use Spatie\Async\Pool;
-use Symfony\Component\Filesystem\Filesystem;
-use Throwable;
+use Symfony\Component\Process\Process;
 
 class MigrateGcsLargeTable
 {
@@ -54,13 +50,6 @@ class MigrateGcsLargeTable
         $manifest = Utils::jsonDecode($manifestObject, true);
         $chunks = array_chunk((array) $manifest['entries'], self::CHUNK_SIZE);
 
-        $optionUploadedFile = new FileUploadOptions();
-        $optionUploadedFile
-            ->setFederationToken(true)
-            ->setFileName($tableInfo['id'])
-            ->setIsSliced(true)
-        ;
-
         $totalChunks = count($chunks);
         $this->logger->info(sprintf(
             'Processing table %s: %d chunks with parallelism %d',
@@ -69,8 +58,6 @@ class MigrateGcsLargeTable
             $this->maxParallelism,
         ));
 
-        // Extract primitives — closures passed to spatie/async are serialized,
-        // so we must not capture $this (which holds non-serializable CurlHandles).
         $sourceApiUrl = $this->sourceClient->getApiUrl();
         $sourceToken = $this->sourceClient->getTokenString();
         $targetApiUrl = $this->targetClient->getApiUrl();
@@ -87,147 +74,103 @@ class MigrateGcsLargeTable
             $this->targetClient->removeTablePrimaryKey($tableInfo['id']);
         }
 
-        $pool = Pool::create()->concurrency($this->maxParallelism);
+        $chunkWorker = __DIR__ . '/../../worker-chunk.php';
+
+        /** @var array<int, array{process: Process, chunkNum: int}> $runningProcesses */
+        $runningProcesses = [];
+        /** @var array<array{fileId: string, chunkNum: int}> $writeQueue */
+        $writeQueue = [];
         $errors = [];
+        $chunkIndex = 0;
 
         try {
-            foreach ($chunks as $chunkKey => $chunk) {
-                $chunkNum = $chunkKey + 1;
-                $this->logger->info(sprintf('Queuing chunk %d/%d (%d slices)', $chunkNum, $totalChunks, count($chunk)));
-
-            // Child process: download from GCS + upload to SAPI + trigger import.
-            // Running the import inside the child keeps ->then() lightweight so the
-            // pool loop is never blocked and other children can run concurrently.
-                $pool
-                ->add(static function () use (
-                    $chunk,
-                    $fileId,
-                    $bucket,
-                    $fileInfo,
-                    $optionUploadedFile,
-                    $sourceApiUrl,
-                    $sourceToken,
-                    $targetApiUrl,
-                    $targetToken,
-                    $chunkNum,
-                    $totalChunks,
-                ): array {
-                    $logs = [];
-                    $sourceClient = new Client(['url' => $sourceApiUrl, 'token' => $sourceToken]);
-                    $targetClient = new Client(['url' => $targetApiUrl, 'token' => $targetToken]);
-
-                    // Refresh GCS credentials for each chunk
-                    $logs[] = sprintf('Chunk %d/%d: refreshing GCS credentials', $chunkNum, $totalChunks);
-                    $chunkFileInfo = $sourceClient->getFile(
-                        $fileId,
-                        (new GetFileOptions())->setFederationToken(true),
-                    );
-                    $gcsCredentials = $chunkFileInfo['gcsCredentials'];
-
-                    $fetchAuthToken = new class ([
-                        'access_token' => $gcsCredentials['access_token'],
-                        'expires_in' => $gcsCredentials['expires_in'],
-                        'token_type' => $gcsCredentials['token_type'],
-                    ]) implements FetchAuthTokenInterface {
-                        public function __construct(private array $creds)
-                        {
-                        }
-
-                        public function fetchAuthToken(?callable $httpHandler = null): array
-                        {
-                            return $this->creds;
-                        }
-
-                        public function getCacheKey(): string
-                        {
-                            return '';
-                        }
-
-                        public function getLastReceivedToken(): array
-                        {
-                            return $this->creds;
-                        }
-                    };
-
-                    $gcsClient = new GoogleStorageClient([
-                        'projectId' => $gcsCredentials['projectId'],
-                        'credentialsFetcher' => $fetchAuthToken,
-                    ]);
-                    $retBucket = $gcsClient->bucket($bucket);
-
-                    $chunkTmpFolder = new Temp();
-                    $slices = [];
-
-                    $logs[] = sprintf(
-                        'Chunk %d/%d: downloading %d slices from GCS',
+            while ($chunkIndex < $totalChunks || !empty($runningProcesses) || !empty($writeQueue)) {
+                // --- Phase 1: spustit nové procesy ---
+                while ($chunkIndex < $totalChunks && count($runningProcesses) < $this->maxParallelism) {
+                    $chunkNum = $chunkIndex + 1;
+                    $this->logger->info(sprintf(
+                        'Starting chunk %d/%d (%d slices)',
                         $chunkNum,
                         $totalChunks,
-                        count($chunk),
+                        count($chunks[$chunkIndex]),
+                    ));
+                    $process = new Process(
+                        [PHP_BINARY, $chunkWorker],
+                        null,
+                        null,
+                        json_encode([
+                            'sourceApiUrl' => $sourceApiUrl,
+                            'sourceToken' => $sourceToken,
+                            'targetApiUrl' => $targetApiUrl,
+                            'targetToken' => $targetToken,
+                            'fileId' => $fileId,
+                            'bucket' => $bucket,
+                            'chunk' => $chunks[$chunkIndex],
+                            'optionFileName' => $tableInfo['id'],
+                            'chunkNum' => $chunkNum,
+                            'totalChunks' => $totalChunks,
+                        ]),
+                        null,
                     );
-                    /** @var array{"url": string} $entry */
-                    foreach ($chunk as $entry) {
-                        $slices[] = $destinationFile = $chunkTmpFolder->getTmpFolder() . '/' . basename($entry['url']);
-                        $blobPath = explode(sprintf('/%s/', $fileInfo['gcsPath']['bucket']), $entry['url']);
-                        $retBucket->object($blobPath[1])->downloadToFile($destinationFile);
+                    $process->start();
+                    $runningProcesses[$chunkIndex] = ['process' => $process, 'chunkNum' => $chunkNum];
+                    $chunkIndex++;
+                }
+
+                // --- Phase 1: zkontrolovat dokončené ---
+                foreach ($runningProcesses as $key => $item) {
+                    if (!$item['process']->isRunning()) {
+                        unset($runningProcesses[$key]);
+                        if (!$item['process']->isSuccessful()) {
+                            $errors[$key] = new RuntimeException(sprintf(
+                                'Chunk %d/%d worker exited with code %d: %s',
+                                $item['chunkNum'],
+                                $totalChunks,
+                                $item['process']->getExitCode(),
+                                trim($item['process']->getErrorOutput()),
+                            ));
+                            continue;
+                        }
+                        /** @var array{logs: string[], fileId: string} $result */
+                        $result = json_decode($item['process']->getOutput(), true);
+                        foreach ($result['logs'] as $msg) {
+                            $this->logger->info($msg);
+                        }
+                        $writeQueue[] = ['fileId' => $result['fileId'], 'chunkNum' => $item['chunkNum']];
                     }
+                }
 
-                    $logs[] = sprintf('Chunk %d/%d: uploading to SAPI file storage', $chunkNum, $totalChunks);
-                    $destinationFileId = $targetClient->uploadSlicedFile($slices, $optionUploadedFile);
-                    $logs[] = sprintf(
-                        'Chunk %d/%d: uploaded (fileId: %d)',
-                        $chunkNum,
-                        $totalChunks,
-                        $destinationFileId,
-                    );
-
-                    $fs = new Filesystem();
-                    $fs->remove($slices);
-                    $chunkTmpFolder->remove();
-
-                    return ['logs' => $logs, 'fileId' => (string) $destinationFileId];
-                })
-                ->then(function (array $result) use (
-                    $chunkNum,
-                    $totalChunks,
-                    $tableInfo,
-                    $preserveTimestamp,
-                ): void {
-                    foreach ($result['logs'] as $message) {
-                        $this->logger->info($message);
-                    }
+                // --- Phase 2: zpracovat první položku z writeQueue (blokující) ---
+                // Běžící Phase 1 procesy pokračují v OS i během tohoto blokujícího volání.
+                if (!empty($writeQueue)) {
+                    $writeItem = array_shift($writeQueue);
                     $this->logger->info(sprintf(
                         'Chunk %d/%d: importing into table %s (fileId: %s)',
-                        $chunkNum,
+                        $writeItem['chunkNum'],
                         $totalChunks,
                         $tableInfo['id'],
-                        $result['fileId'],
+                        $writeItem['fileId'],
                     ));
-                    $this->targetClient->writeTableAsyncDirect(
-                        $tableInfo['id'],
-                        [
-                            'name' => $tableInfo['name'],
-                            'dataFileId' => $result['fileId'],
-                            'columns' => $tableInfo['columns'],
-                            'useTimestampFromDataFile' => $preserveTimestamp,
-                            'incremental' => true,
-                        ],
-                    );
-                    $this->logger->info(sprintf('Finished chunk %d/%d', $chunkNum, $totalChunks));
-                })
-                ->catch(function (Throwable $e) use ($chunkKey, $chunkNum, $totalChunks, &$errors): void {
-                    $this->logger->error(sprintf(
-                        'Failed chunk %d/%d: %s',
-                        $chunkNum,
-                        $totalChunks,
-                        $e->getMessage(),
-                    ));
-                    $errors[$chunkKey] = $e;
-                });
+                    $this->targetClient->writeTableAsyncDirect($tableInfo['id'], [
+                        'name' => $tableInfo['name'],
+                        'dataFileId' => $writeItem['fileId'],
+                        'columns' => $tableInfo['columns'],
+                        'useTimestampFromDataFile' => $preserveTimestamp,
+                        'incremental' => true,
+                    ]);
+                    $this->logger->info(sprintf('Finished chunk %d/%d', $writeItem['chunkNum'], $totalChunks));
+                    continue;
+                }
+
+                usleep(100_000); // 100ms polling pokud není co zpracovat
             }
 
-            $pool->wait();
             $this->logger->info(sprintf('All %d chunks processed', $totalChunks));
         } finally {
+            foreach ($runningProcesses as $item) {
+                $item['process']->stop(0);
+            }
+
             if (!empty($primaryKey)) {
                 $this->logger->info(sprintf(
                     'Restoring primary key [%s] on %s',
@@ -239,16 +182,11 @@ class MigrateGcsLargeTable
         }
 
         if (!empty($errors)) {
-            $firstError = reset($errors);
+            $first = reset($errors);
             throw new RuntimeException(
-                sprintf(
-                    'Failed to process %d chunk(s). First error (chunk %d): %s',
-                    count($errors),
-                    array_key_first($errors) + 1,
-                    $firstError->getMessage(),
-                ),
+                sprintf('Failed %d chunk(s). First: %s', count($errors), $first->getMessage()),
                 0,
-                $firstError,
+                $first,
             );
         }
     }
