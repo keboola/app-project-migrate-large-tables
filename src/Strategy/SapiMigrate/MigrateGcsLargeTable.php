@@ -15,14 +15,13 @@ use Symfony\Component\Process\Process;
 
 class MigrateGcsLargeTable
 {
-    private const CHUNK_SIZE = 100;
-
     public function __construct(
         private readonly Client $sourceClient,
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
         private readonly int $maxParallelism = 4,
+        private readonly int $chunkSize = 100,
     ) {
     }
 
@@ -48,7 +47,7 @@ class MigrateGcsLargeTable
 
         /** @var array{"entries": string[]} $manifest */
         $manifest = Utils::jsonDecode($manifestObject, true);
-        $chunks = array_chunk((array) $manifest['entries'], self::CHUNK_SIZE);
+        $chunks = array_chunk((array) $manifest['entries'], max(1, $this->chunkSize));
 
         $totalChunks = count($chunks);
         $this->logger->info(sprintf(

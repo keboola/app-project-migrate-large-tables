@@ -37,7 +37,8 @@ class Component extends BaseComponent
                     $targetSapiClient,
                     $this->getLogger(),
                     $this->getConfig()->isDryRun(),
-                    $this->getConfig()->getParallelChunks(),
+                    $this->getConfig()->getGcsLargeTableParallelChunks(),
+                    $this->getConfig()->getGcsLargeTableChunkSize(),
                 );
                 break;
             case 'database':

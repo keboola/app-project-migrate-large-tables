@@ -29,6 +29,7 @@ class SapiMigrate implements MigrateInterface
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
         private readonly int $parallelChunks = 4,
+        private readonly int $chunkSize = 100,
     ) {
         $this->storageModifier = new StorageModifier($this->targetClient);
         $this->migrateGcsLargeTable = new MigrateGcsLargeTable(
@@ -37,6 +38,7 @@ class SapiMigrate implements MigrateInterface
             $this->logger,
             $this->dryRun,
             $this->parallelChunks,
+            $this->chunkSize,
         );
     }
 
