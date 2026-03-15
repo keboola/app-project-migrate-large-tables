@@ -84,7 +84,30 @@ class MigrateGcsLargeTable
 
         try {
             while ($chunkIndex < $totalChunks || !empty($runningProcesses) || !empty($writeQueue)) {
-                // --- Phase 1: spustit nové procesy ---
+                // --- Phase 1: collect finished workers (free slots before starting new ones) ---
+                foreach ($runningProcesses as $key => $item) {
+                    if (!$item['process']->isRunning()) {
+                        unset($runningProcesses[$key]);
+                        if (!$item['process']->isSuccessful()) {
+                            $errors[$key] = new RuntimeException(sprintf(
+                                'Chunk %d/%d worker exited with code %d: %s',
+                                $item['chunkNum'],
+                                $totalChunks,
+                                $item['process']->getExitCode(),
+                                trim($item['process']->getErrorOutput()),
+                            ));
+                            continue;
+                        }
+                        /** @var array{logs: string[], fileId: string} $result */
+                        $result = json_decode($item['process']->getOutput(), true);
+                        foreach ($result['logs'] as $msg) {
+                            $this->logger->info($msg);
+                        }
+                        $writeQueue[] = ['fileId' => $result['fileId'], 'chunkNum' => $item['chunkNum']];
+                    }
+                }
+
+                // --- Phase 1: start new workers into freed slots ---
                 while ($chunkIndex < $totalChunks && count($runningProcesses) < $this->maxParallelism) {
                     $chunkNum = $chunkIndex + 1;
                     $this->logger->info(sprintf(
@@ -116,31 +139,8 @@ class MigrateGcsLargeTable
                     $chunkIndex++;
                 }
 
-                // --- Phase 1: zkontrolovat dokončené ---
-                foreach ($runningProcesses as $key => $item) {
-                    if (!$item['process']->isRunning()) {
-                        unset($runningProcesses[$key]);
-                        if (!$item['process']->isSuccessful()) {
-                            $errors[$key] = new RuntimeException(sprintf(
-                                'Chunk %d/%d worker exited with code %d: %s',
-                                $item['chunkNum'],
-                                $totalChunks,
-                                $item['process']->getExitCode(),
-                                trim($item['process']->getErrorOutput()),
-                            ));
-                            continue;
-                        }
-                        /** @var array{logs: string[], fileId: string} $result */
-                        $result = json_decode($item['process']->getOutput(), true);
-                        foreach ($result['logs'] as $msg) {
-                            $this->logger->info($msg);
-                        }
-                        $writeQueue[] = ['fileId' => $result['fileId'], 'chunkNum' => $item['chunkNum']];
-                    }
-                }
-
-                // --- Phase 2: zpracovat první položku z writeQueue (blokující) ---
-                // Běžící Phase 1 procesy pokračují v OS i během tohoto blokujícího volání.
+                // --- Phase 2: process first item from writeQueue (blocking) ---
+                // Phase 1 workers continue running in the OS during this blocking call.
                 if (!empty($writeQueue)) {
                     $writeItem = array_shift($writeQueue);
                     $this->logger->info(sprintf(
@@ -161,7 +161,7 @@ class MigrateGcsLargeTable
                     continue;
                 }
 
-                usleep(100_000); // 100ms polling pokud není co zpracovat
+                usleep(100_000); // 100ms polling — nothing to process yet
             }
 
             $this->logger->info(sprintf('All %d chunks processed', $totalChunks));
