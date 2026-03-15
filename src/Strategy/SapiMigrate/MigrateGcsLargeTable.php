@@ -20,8 +20,8 @@ class MigrateGcsLargeTable
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
-        private readonly int $maxParallelism = 4,
-        private readonly int $chunkSize = 100,
+        private readonly int $maxParallelism = 3,
+        private readonly int $chunkSize = 150,
     ) {
     }
 
