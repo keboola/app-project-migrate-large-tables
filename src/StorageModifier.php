@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\AppProjectMigrateLargeTables;
 
+use Keboola\Component\UserException;
 use Keboola\Csv\CsvFile;
 use Keboola\Datatype\Definition\BaseType;
 use Keboola\Datatype\Definition\Bigquery;
@@ -68,6 +69,8 @@ class StorageModifier
         $sourceBackend = $tableInfo['bucket']['backend'];
         $destinationBackend = $this->getDestinationBucketBackend($tableInfo['bucket']['id']);
 
+        $this->validateBigqueryNumericScale($sourceBackend, $destinationBackend, $tableInfo);
+
         $columns = [];
         foreach ($tableInfo['definition']['columns'] as $columnDef) {
             $columnName = $columnDef['name'];
@@ -127,6 +130,43 @@ class StorageModifier
                 ));
             }
             throw $e;
+        }
+    }
+
+    private function validateBigqueryNumericScale(
+        string $sourceBackend,
+        string $destinationBackend,
+        array $tableInfo,
+    ): void {
+        if ($sourceBackend !== 'snowflake' || $destinationBackend !== 'bigquery') {
+            return;
+        }
+
+        foreach ($tableInfo['definition']['columns'] as $columnDef) {
+            if (($columnDef['basetype'] ?? null) !== 'NUMERIC') {
+                continue;
+            }
+
+            $length = $columnDef['definition']['length'] ?? null;
+            if ($length === null) {
+                continue;
+            }
+
+            $parts = explode(',', $length);
+            if (count($parts) !== 2) {
+                continue;
+            }
+
+            $scale = (int) trim($parts[1]);
+            if ($scale > 9) {
+                throw new UserException(sprintf(
+                    'Column "%s" has type NUMBER(%s) which exceeds BigQuery\'s maximum scale of 9. '
+                    . 'BigQuery supports NUMERIC with scale up to 9. '
+                    . 'Please adjust the column type before migrating.',
+                    $columnDef['name'],
+                    $length,
+                ));
+            }
         }
     }
 
