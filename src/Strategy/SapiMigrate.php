@@ -28,6 +28,8 @@ class SapiMigrate implements MigrateInterface
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
+        private readonly int $parallelChunks = 3,
+        private readonly int $chunkSize = 150,
     ) {
         $this->storageModifier = new StorageModifier($this->targetClient);
         $this->migrateGcsLargeTable = new MigrateGcsLargeTable(
@@ -35,6 +37,8 @@ class SapiMigrate implements MigrateInterface
             $this->targetClient,
             $this->logger,
             $this->dryRun,
+            $this->parallelChunks,
+            $this->chunkSize,
         );
     }
 
@@ -117,9 +121,7 @@ class SapiMigrate implements MigrateInterface
                 $sourceFileId,
                 $sourceTableInfo,
                 $config->preserveTimestamp(),
-                $tmp,
             );
-            $tmp->remove();
             return;
         } elseif ($sourceFileInfo['isSliced'] === true) {
             $optionUploadedFile->setIsSliced(true);
