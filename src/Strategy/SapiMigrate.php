@@ -202,9 +202,13 @@ class SapiMigrate implements MigrateInterface
         if (!is_array($sourceBucket)) {
             return $options;
         }
-        $sourceBackend = (string) $sourceBucket['backend'];
+        $sourceBackend = (string) ($sourceBucket['backend'] ?? '');
+        $sourceBucketId = (string) ($sourceBucket['id'] ?? '');
+        if ($sourceBackend === '' || $sourceBucketId === '') {
+            return $options;
+        }
         if ($sourceBackend === 'snowflake'
-            && $this->getDestinationBucketBackend((string) $sourceBucket['id']) === 'bigquery'
+            && $this->getDestinationBucketBackend($sourceBucketId) === 'bigquery'
         ) {
             $options['timezone'] = 'UTC';
         }
