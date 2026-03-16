@@ -23,7 +23,7 @@ class SapiMigrate implements MigrateInterface
     /** @var string[] $bucketsExist */
     private array $bucketsExist = [];
 
-    /** @var string[] $destinationBackendCache */
+    /** @var array<string, string> $destinationBackendCache */
     private array $destinationBackendCache = [];
 
     public function __construct(
@@ -199,7 +199,9 @@ class SapiMigrate implements MigrateInterface
         ];
 
         $sourceBucket = $sourceTableInfo['bucket'];
-        assert(is_array($sourceBucket));
+        if (!is_array($sourceBucket)) {
+            return $options;
+        }
         $sourceBackend = (string) $sourceBucket['backend'];
         if ($sourceBackend === 'snowflake'
             && $this->getDestinationBucketBackend((string) $sourceBucket['id']) === 'bigquery'
@@ -214,7 +216,7 @@ class SapiMigrate implements MigrateInterface
     {
         if (!array_key_exists($bucketId, $this->destinationBackendCache)) {
             $bucket = $this->targetClient->getBucket($bucketId);
-            $this->destinationBackendCache[$bucketId] = $bucket['backend'];
+            $this->destinationBackendCache[$bucketId] = (string) ($bucket['backend'] ?? '');
         }
 
         return $this->destinationBackendCache[$bucketId];
