@@ -23,6 +23,9 @@ class SapiMigrate implements MigrateInterface
     /** @var string[] $bucketsExist */
     private array $bucketsExist = [];
 
+    /** @var string[] $destinationBackendCache */
+    private array $destinationBackendCache = [];
+
     public function __construct(
         private readonly Client $sourceClient,
         private readonly Client $targetClient,
@@ -98,10 +101,10 @@ class SapiMigrate implements MigrateInterface
         }
 
         $this->logger->info(sprintf('Exporting table %s', $sourceTableInfo['id']));
-        $file = $this->sourceClient->exportTableAsync($sourceTableInfo['id'], [
-            'gzip' => true,
-            'includeInternalTimestamp' => $config->preserveTimestamp(),
-        ]);
+        $file = $this->sourceClient->exportTableAsync(
+            $sourceTableInfo['id'],
+            $this->buildExportOptions($sourceTableInfo, $config),
+        );
 
         $sourceFileId = $file['file']['id'];
         $sourceFileInfo = $this->sourceClient->getFile($sourceFileId);
@@ -185,5 +188,35 @@ class SapiMigrate implements MigrateInterface
             );
         }
         return $listTables;
+    }
+
+    /** @param array<string, mixed> $sourceTableInfo */
+    private function buildExportOptions(array $sourceTableInfo, Config $config): array
+    {
+        $options = [
+            'gzip' => true,
+            'includeInternalTimestamp' => $config->preserveTimestamp(),
+        ];
+
+        $sourceBucket = $sourceTableInfo['bucket'];
+        assert(is_array($sourceBucket));
+        $sourceBackend = (string) $sourceBucket['backend'];
+        if ($sourceBackend === 'snowflake'
+            && $this->getDestinationBucketBackend((string) $sourceBucket['id']) === 'bigquery'
+        ) {
+            $options['timezone'] = 'UTC';
+        }
+
+        return $options;
+    }
+
+    private function getDestinationBucketBackend(string $bucketId): string
+    {
+        if (!array_key_exists($bucketId, $this->destinationBackendCache)) {
+            $bucket = $this->targetClient->getBucket($bucketId);
+            $this->destinationBackendCache[$bucketId] = $bucket['backend'];
+        }
+
+        return $this->destinationBackendCache[$bucketId];
     }
 }
