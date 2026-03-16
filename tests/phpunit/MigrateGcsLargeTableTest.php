@@ -149,6 +149,71 @@ class MigrateGcsLargeTableTest extends TestCase
         );
     }
 
+    public function testMultipleChunksWithLimitedParallelism(): void
+    {
+        $tableId = 'in.c-test.my_table';
+
+        $targetClient = $this->createMock(Client::class);
+        $targetClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $targetClient->method('getTokenString')->willReturn('target-token');
+        $targetClient->method('getTable')->willReturn(['primaryKey' => []]);
+        $targetClient->expects($this->exactly(3))->method('writeTableAsyncDirect');
+
+        $migrator = new MigrateGcsLargeTable(
+            $this->buildSourceClient(),
+            $targetClient,
+            $this->createMock(LoggerInterface::class),
+            maxParallelism: 2,
+            chunkSize: 1,
+        );
+
+        $migrator->migrate(
+            123,
+            ['id' => $tableId, 'name' => 'my_table', 'columns' => ['id', 'name']],
+            false,
+            $this->buildGcsClientFactory([
+                ['url' => 'gs://test-bucket/path/slice1'],
+                ['url' => 'gs://test-bucket/path/slice2'],
+                ['url' => 'gs://test-bucket/path/slice3'],
+            ]),
+            $this->buildSuccessfulProcessFactory(),
+        );
+    }
+
+    public function testMultipleChunkFailuresAreAggregated(): void
+    {
+        $tableId = 'in.c-test.my_table';
+
+        $targetClient = $this->createMock(Client::class);
+        $targetClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $targetClient->method('getTokenString')->willReturn('target-token');
+        $targetClient->method('getTable')->willReturn(['primaryKey' => []]);
+        $targetClient->expects($this->never())->method('writeTableAsyncDirect');
+
+        $migrator = new MigrateGcsLargeTable(
+            $this->buildSourceClient(),
+            $targetClient,
+            $this->createMock(LoggerInterface::class),
+            maxParallelism: 2,
+            chunkSize: 1,
+        );
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Failed 3 chunk(s).');
+
+        $migrator->migrate(
+            123,
+            ['id' => $tableId, 'name' => 'my_table', 'columns' => ['id', 'name']],
+            false,
+            $this->buildGcsClientFactory([
+                ['url' => 'gs://test-bucket/path/slice1'],
+                ['url' => 'gs://test-bucket/path/slice2'],
+                ['url' => 'gs://test-bucket/path/slice3'],
+            ]),
+            $this->buildFailingProcessFactory(),
+        );
+    }
+
     public function testTableWithoutPrimaryKeySkipsPkCalls(): void
     {
         $tableId = 'in.c-test.my_table';

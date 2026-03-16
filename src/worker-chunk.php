@@ -36,6 +36,9 @@ $chunk = $input['chunk'];
 $bucket = $input['bucket'];
 $fileId = $input['fileId'];
 
+$tmpDir = null;
+$slices = [];
+
 try {
     // Refresh GCS credentials for this chunk
     $logs[] = sprintf('Chunk %d/%d: refreshing GCS credentials', $chunkNum, $totalChunks);
@@ -78,8 +81,6 @@ try {
 
     $tmpDir = sys_get_temp_dir() . '/chunk-' . uniqid();
     mkdir($tmpDir, 0777, true);
-
-    $slices = [];
     $logs[] = sprintf(
         'Chunk %d/%d: downloading %d slices from GCS',
         $chunkNum,
@@ -118,6 +119,13 @@ try {
     echo json_encode(['fileId' => (string) $destinationFileId, 'logs' => $logs]);
     exit(0);
 } catch (Throwable $e) {
+    $fs = new Filesystem();
+    if ($slices) {
+        $fs->remove($slices);
+    }
+    if ($tmpDir !== null) {
+        $fs->remove($tmpDir);
+    }
     fwrite(STDERR, sprintf(
         'Chunk %d/%d failed: %s in %s:%d',
         $chunkNum,

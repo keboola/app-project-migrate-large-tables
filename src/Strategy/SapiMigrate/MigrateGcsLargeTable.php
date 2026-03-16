@@ -56,7 +56,7 @@ class MigrateGcsLargeTable
         $retBucket = $gcsClient->bucket($bucket);
         $manifestObject = $retBucket->object($fileInfo['gcsPath']['key'] . 'manifest')->downloadAsString();
 
-        /** @var array{"entries": string[]} $manifest */
+        /** @var array{"entries": array<array{url: string}>} $manifest */
         $manifest = Utils::jsonDecode($manifestObject, true);
         $chunks = array_chunk((array) $manifest['entries'], max(1, $this->chunkSize));
 

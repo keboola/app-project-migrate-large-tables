@@ -106,16 +106,9 @@ class SapiMigrate implements MigrateInterface
         $sourceFileId = $file['file']['id'];
         $sourceFileInfo = $this->sourceClient->getFile($sourceFileId);
 
-        $tmp = new Temp();
-        $optionUploadedFile = new FileUploadOptions();
-        $optionUploadedFile
-            ->setFederationToken(true)
-            ->setFileName($sourceTableInfo['id'])
-        ;
-        $tableSize = $sourceFileInfo['sizeBytes'];
         if ($sourceFileInfo['provider'] === 'gcp' &&
             $sourceFileInfo['isSliced'] === true &&
-            $tableSize > self::LARGE_GCS_TABLE_SIZE
+            $sourceFileInfo['sizeBytes'] > self::LARGE_GCS_TABLE_SIZE
         ) {
             $this->migrateGcsLargeTable->migrate(
                 $sourceFileId,
@@ -123,7 +116,15 @@ class SapiMigrate implements MigrateInterface
                 $config->preserveTimestamp(),
             );
             return;
-        } elseif ($sourceFileInfo['isSliced'] === true) {
+        }
+
+        $tmp = new Temp();
+        $optionUploadedFile = new FileUploadOptions();
+        $optionUploadedFile
+            ->setFederationToken(true)
+            ->setFileName($sourceTableInfo['id'])
+        ;
+        if ($sourceFileInfo['isSliced'] === true) {
             $optionUploadedFile->setIsSliced(true);
 
             $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));
