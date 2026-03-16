@@ -365,17 +365,19 @@ class StorageModifierTest extends TestCase
 
         $modifier = new StorageModifier($client);
 
-        $this->expectException(UserException::class);
-        $this->expectExceptionMessageMatches('/Column "amount"/');
-        $this->expectExceptionMessageMatches('/NUMBER\(38,12\)/');
-
-        $modifier->createTable($this->buildTableInfo(
-            sourceBackend: 'snowflake',
-            bucketId: $bucketId,
-            columns: [
-                $this->buildColumnDef('amount', 'NUMBER', 'NUMERIC', true, '38,12'),
-            ],
-        ));
+        try {
+            $modifier->createTable($this->buildTableInfo(
+                sourceBackend: 'snowflake',
+                bucketId: $bucketId,
+                columns: [
+                    $this->buildColumnDef('amount', 'NUMBER', 'NUMERIC', true, '38,12'),
+                ],
+            ));
+            $this->fail('Expected UserException was not thrown');
+        } catch (UserException $e) {
+            $this->assertStringContainsString('Column "amount"', $e->getMessage());
+            $this->assertStringContainsString('NUMBER(38,12)', $e->getMessage());
+        }
     }
 
     public function testCreateTypedTableSnowflakeToBigqueryAllowsNumericScaleOf9(): void

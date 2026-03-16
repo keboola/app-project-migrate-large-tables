@@ -143,7 +143,7 @@ class StorageModifier
         }
 
         foreach ($tableInfo['definition']['columns'] as $columnDef) {
-            if (($columnDef['basetype'] ?? null) !== 'NUMERIC') {
+            if (strtoupper((string) ($columnDef['basetype'] ?? '')) !== 'NUMERIC') {
                 continue;
             }
 
