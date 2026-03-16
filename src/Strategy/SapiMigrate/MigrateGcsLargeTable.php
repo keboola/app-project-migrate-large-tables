@@ -29,11 +29,22 @@ class MigrateGcsLargeTable
         int $fileId,
         array $tableInfo,
         bool $preserveTimestamp,
+        ?callable $gcsClientFactory = null,
+        ?callable $processFactory = null,
     ): void {
         if ($this->dryRun === true) {
             $this->logger->info(sprintf('[dry-run] Migrate table %s', $tableInfo['id']));
             return;
         }
+
+        $gcsClientFactory ??= fn(int $fileId) => $this->getGcsClient($fileId);
+        $processFactory ??= fn(array $input) => new Process(
+            [PHP_BINARY, __DIR__ . '/../../worker-chunk.php'],
+            null,
+            null,
+            json_encode($input),
+            null,
+        );
 
         $fileInfo = $this->sourceClient->getFile(
             $fileId,
@@ -41,7 +52,7 @@ class MigrateGcsLargeTable
         );
 
         $bucket = $fileInfo['gcsPath']['bucket'];
-        $gcsClient = $this->getGcsClient($fileId);
+        $gcsClient = $gcsClientFactory($fileId);
         $retBucket = $gcsClient->bucket($bucket);
         $manifestObject = $retBucket->object($fileInfo['gcsPath']['key'] . 'manifest')->downloadAsString();
 
@@ -72,8 +83,6 @@ class MigrateGcsLargeTable
             ));
             $this->targetClient->removeTablePrimaryKey($tableInfo['id']);
         }
-
-        $chunkWorker = __DIR__ . '/../../worker-chunk.php';
 
         /** @var array<int, array{process: Process, chunkNum: int}> $runningProcesses */
         $runningProcesses = [];
@@ -116,24 +125,18 @@ class MigrateGcsLargeTable
                         $totalChunks,
                         count($chunks[$chunkIndex]),
                     ));
-                    $process = new Process(
-                        [PHP_BINARY, $chunkWorker],
-                        null,
-                        null,
-                        json_encode([
-                            'sourceApiUrl' => $sourceApiUrl,
-                            'sourceToken' => $sourceToken,
-                            'targetApiUrl' => $targetApiUrl,
-                            'targetToken' => $targetToken,
-                            'fileId' => $fileId,
-                            'bucket' => $bucket,
-                            'chunk' => $chunks[$chunkIndex],
-                            'optionFileName' => $tableInfo['id'],
-                            'chunkNum' => $chunkNum,
-                            'totalChunks' => $totalChunks,
-                        ]),
-                        null,
-                    );
+                    $process = $processFactory([
+                        'sourceApiUrl' => $sourceApiUrl,
+                        'sourceToken' => $sourceToken,
+                        'targetApiUrl' => $targetApiUrl,
+                        'targetToken' => $targetToken,
+                        'fileId' => $fileId,
+                        'bucket' => $bucket,
+                        'chunk' => $chunks[$chunkIndex],
+                        'optionFileName' => $tableInfo['id'],
+                        'chunkNum' => $chunkNum,
+                        'totalChunks' => $totalChunks,
+                    ]);
                     $process->start();
                     $runningProcesses[$chunkIndex] = ['process' => $process, 'chunkNum' => $chunkNum];
                     $chunkIndex++;
