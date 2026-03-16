@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Keboola\AppProjectMigrateLargeTables\Tests;
 
 use Keboola\AppProjectMigrateLargeTables\StorageModifier;
+use Keboola\Component\UserException;
 use Keboola\StorageApi\Client;
 use PHPUnit\Framework\TestCase;
 
@@ -348,6 +349,55 @@ class StorageModifierTest extends TestCase
         $this->assertNotNull($capturedData);
         $this->assertSame(['id'], $capturedData['primaryKeysNames']);
         $this->assertSame('my_table', $capturedData['name']);
+    }
+
+    public function testCreateTypedTableSnowflakeToBigqueryThrowsForNumericScaleOver9(): void
+    {
+        $bucketId = 'in.c-test';
+
+        $client = $this->createMock(Client::class);
+        $client->method('getBucket')
+            ->with($bucketId)
+            ->willReturn(['backend' => 'bigquery']);
+
+        $client->expects($this->never())
+            ->method('createTableDefinition');
+
+        $modifier = new StorageModifier($client);
+
+        $this->expectException(UserException::class);
+        $this->expectExceptionMessageMatches('/Column "amount"/');
+        $this->expectExceptionMessageMatches('/NUMBER\(38,12\)/');
+
+        $modifier->createTable($this->buildTableInfo(
+            sourceBackend: 'snowflake',
+            bucketId: $bucketId,
+            columns: [
+                $this->buildColumnDef('amount', 'NUMBER', 'NUMERIC', true, '38,12'),
+            ],
+        ));
+    }
+
+    public function testCreateTypedTableSnowflakeToBigqueryAllowsNumericScaleOf9(): void
+    {
+        $bucketId = 'in.c-test';
+
+        $client = $this->createMock(Client::class);
+        $client->method('getBucket')
+            ->with($bucketId)
+            ->willReturn(['backend' => 'bigquery']);
+
+        $client->expects($this->once())
+            ->method('createTableDefinition');
+
+        $modifier = new StorageModifier($client);
+        $modifier->createTable($this->buildTableInfo(
+            sourceBackend: 'snowflake',
+            bucketId: $bucketId,
+            columns: [
+                $this->buildColumnDef('amount', 'NUMBER', 'NUMERIC', true, '38,9'),
+            ],
+        ));
     }
 
     public function testCreateTypedTableWithUnknownDestinationBackendUsesBasetypeAsType(): void
