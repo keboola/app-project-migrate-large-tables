@@ -7,6 +7,7 @@ namespace Keboola\AppProjectMigrateLargeTables\Strategy\SapiMigrate;
 use Google\Auth\FetchAuthTokenInterface;
 use Google\Cloud\Storage\StorageClient as GoogleStorageClient;
 use GuzzleHttp\Utils;
+use JsonException;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\Options\GetFileOptions;
 use Psr\Log\LoggerInterface;
@@ -107,8 +108,18 @@ class MigrateGcsLargeTable
                             ));
                             continue;
                         }
-                        /** @var array{logs: string[], fileId: string} $result */
-                        $result = json_decode($item['process']->getOutput(), true);
+                        try {
+                            /** @var array{logs: string[], fileId: string} $result */
+                            $result = json_decode($item['process']->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+                        } catch (JsonException $e) {
+                            $errors[$key] = new RuntimeException(sprintf(
+                                'Chunk %d/%d worker returned invalid JSON: %s',
+                                $item['chunkNum'],
+                                $totalChunks,
+                                substr($item['process']->getOutput(), 0, 200),
+                            ), 0, $e);
+                            continue;
+                        }
                         foreach ($result['logs'] as $msg) {
                             $this->logger->info($msg);
                         }
@@ -117,7 +128,7 @@ class MigrateGcsLargeTable
                 }
 
                 // --- Phase 1: start new workers into freed slots ---
-                while ($chunkIndex < $totalChunks && count($runningProcesses) < $this->maxParallelism) {
+                while ($chunkIndex < $totalChunks && count($runningProcesses) < max(1, $this->maxParallelism)) {
                     $chunkNum = $chunkIndex + 1;
                     $this->logger->info(sprintf(
                         'Starting chunk %d/%d (%d slices)',

@@ -7,7 +7,7 @@
         "keboola/db-adapter-snowflake": "^1.5",
         "keboola/php-component": "^9.4",
         "keboola/storage-api-client": "^18.2",
-        "symfony/process": "^5.0"
+        "symfony/process": "^6.0"
     },
     "require-dev": {
         "cweagans/composer-patches": "^1.7",
