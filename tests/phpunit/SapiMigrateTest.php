@@ -63,7 +63,6 @@ class SapiMigrateTest extends TestCase
         $fileInfo = $this->buildFileInfo();
 
         $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
         $sourceClient->method('getFile')->willReturn($fileInfo);
         $sourceClient->method('downloadFile');
 
@@ -79,7 +78,8 @@ class SapiMigrateTest extends TestCase
             ->with(
                 $tableInfo['id'],
                 $this->arrayHasKey('timezone'),
-            );
+            )
+            ->willReturn(['file' => ['id' => 123]]);
 
         $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
         $migrate->migrate($this->buildConfig(['in.c-test.table']));
@@ -94,7 +94,6 @@ class SapiMigrateTest extends TestCase
         $fileInfo = $this->buildFileInfo();
 
         $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
         $sourceClient->method('getFile')->willReturn($fileInfo);
         $sourceClient->method('downloadFile');
 
@@ -109,7 +108,8 @@ class SapiMigrateTest extends TestCase
             ->with(
                 $tableInfo['id'],
                 $this->callback(fn(array $options) => isset($options['timezone']) && $options['timezone'] === 'UTC'),
-            );
+            )
+            ->willReturn(['file' => ['id' => 123]]);
 
         $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
         $migrate->migrate($this->buildConfig(['in.c-test.table']));
@@ -124,7 +124,6 @@ class SapiMigrateTest extends TestCase
         $fileInfo = $this->buildFileInfo();
 
         $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
         $sourceClient->method('getFile')->willReturn($fileInfo);
         $sourceClient->method('downloadFile');
 
@@ -139,7 +138,8 @@ class SapiMigrateTest extends TestCase
             ->with(
                 $tableInfo['id'],
                 $this->callback(fn(array $options) => !isset($options['timezone'])),
-            );
+            )
+            ->willReturn(['file' => ['id' => 123]]);
 
         $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
         $migrate->migrate($this->buildConfig(['in.c-test.table']));
@@ -154,7 +154,6 @@ class SapiMigrateTest extends TestCase
         $fileInfo = $this->buildFileInfo();
 
         $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
         $sourceClient->method('getFile')->willReturn($fileInfo);
         $sourceClient->method('downloadFile');
 
@@ -168,7 +167,8 @@ class SapiMigrateTest extends TestCase
             ->with(
                 $tableInfo['id'],
                 $this->callback(fn(array $options) => !isset($options['timezone'])),
-            );
+            )
+            ->willReturn(['file' => ['id' => 123]]);
 
         $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
         $migrate->migrate($this->buildConfig(['in.c-test.table']));
