@@ -473,11 +473,13 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
             ->willReturn(['backend' => 'snowflake']);
 
         $capturedData = null;
-        $client->method('createTableDefinition')
+        $client->expects($this->once())
+            ->method('createTableDefinition')
             ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
                 $capturedData = $data;
             });
@@ -496,9 +498,9 @@ class StorageModifierTest extends TestCase
             forcePrimaryKeyNotNull: true,
         );
 
-        $this->assertNotNull($capturedData);
-        $this->assertFalse($capturedData['columns'][0]['definition']['nullable'], 'PK column must be not nullable');
-        $this->assertTrue($capturedData['columns'][1]['definition']['nullable'], 'Non-PK column must stay nullable');
+        self::assertNotNull($capturedData);
+        self::assertFalse($capturedData['columns'][0]['definition']['nullable'], 'PK column must be not nullable');
+        self::assertTrue($capturedData['columns'][1]['definition']['nullable'], 'Non-PK column must stay nullable');
     }
 
     public function testForcePrimaryKeyNotNullFalsePreservesNullable(): void
@@ -506,11 +508,13 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
             ->willReturn(['backend' => 'snowflake']);
 
         $capturedData = null;
-        $client->method('createTableDefinition')
+        $client->expects($this->once())
+            ->method('createTableDefinition')
             ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
                 $capturedData = $data;
             });
@@ -528,8 +532,8 @@ class StorageModifierTest extends TestCase
             forcePrimaryKeyNotNull: false,
         );
 
-        $this->assertNotNull($capturedData);
-        $this->assertTrue($capturedData['columns'][0]['definition']['nullable'], 'Without flag, nullable stays true');
+        self::assertNotNull($capturedData);
+        self::assertTrue($capturedData['columns'][0]['definition']['nullable'], 'Without flag, nullable stays true');
     }
 
     public function testCreateTypedTableWithUnknownDestinationBackendUsesBasetypeAsType(): void

@@ -13,7 +13,7 @@ use Psr\Log\NullLogger;
 
 class SapiMigrateTest extends TestCase
 {
-    private function buildConfig(array $migrateTables = []): Config
+    private function buildConfig(array $migrateTables = [], bool $forcePrimaryKeyNotNull = false): Config
     {
         $params = [
             'sourceKbcUrl' => 'https://connection.keboola.com',
@@ -21,6 +21,9 @@ class SapiMigrateTest extends TestCase
         ];
         if ($migrateTables !== []) {
             $params['tables'] = $migrateTables;
+        }
+        if ($forcePrimaryKeyNotNull) {
+            $params['forcePrimaryKeyNotNull'] = true;
         }
 
         return new Config(['parameters' => $params], new ConfigDefinition());
@@ -176,6 +179,55 @@ class SapiMigrateTest extends TestCase
 
         $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
         $migrate->migrate($this->buildConfig(['in.c-test.table']));
+    }
+
+    public function testForcePrimaryKeyNotNullIsPassedToTableCreation(): void
+    {
+        $sourceClient = $this->createMock(Client::class);
+        $targetClient = $this->createMock(Client::class);
+
+        $tableInfo = array_merge($this->buildTableInfo('snowflake'), [
+            'isTyped' => true,
+            'primaryKey' => ['id'],
+            'definition' => [
+                'columns' => [
+                    ['name' => 'id', 'basetype' => 'INTEGER', 'definition' => [
+                        'type' => 'INTEGER', 'nullable' => true,
+                    ]],
+                    ['name' => 'name', 'basetype' => 'STRING', 'definition' => [
+                        'type' => 'VARCHAR', 'nullable' => true,
+                    ]],
+                ],
+            ],
+            'metadata' => [],
+            'columnMetadata' => [],
+        ]);
+        $fileInfo = $this->buildFileInfo();
+
+        $sourceClient->method('getTable')->willReturn($tableInfo);
+        $sourceClient->method('getFile')->willReturn($fileInfo);
+        $sourceClient->method('downloadFile');
+        $sourceClient->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
+
+        $targetClient->method('bucketExists')->willReturn(true);
+        $targetClient->method('tableExists')->willReturn(false);
+        $targetClient->method('getBucket')->willReturn(['backend' => 'snowflake']);
+        $targetClient->method('uploadFile')->willReturn(456);
+        $targetClient->method('writeTableAsyncDirect');
+
+        $capturedData = null;
+        $targetClient->expects($this->once())
+            ->method('createTableDefinition')
+            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+                $capturedData = $data;
+            });
+
+        $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
+        $migrate->migrate($this->buildConfig(['in.c-test.table'], forcePrimaryKeyNotNull: true));
+
+        self::assertNotNull($capturedData);
+        self::assertFalse($capturedData['columns'][0]['definition']['nullable'], 'PK column must be not nullable');
+        self::assertTrue($capturedData['columns'][1]['definition']['nullable'], 'Non-PK column must stay nullable');
     }
 
     public function testDestinationBucketBackendIsCachedAcrossMultipleTables(): void
