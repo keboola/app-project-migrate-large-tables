@@ -102,7 +102,7 @@ class ConfigTest extends TestCase
             'sourceKbcUrl' => 'https://connection.keboola.com',
             '#sourceKbcToken' => 'token',
         ]);
-        $this->assertFalse($config->forcePrimaryKeyNotNull());
+        self::assertFalse($config->forcePrimaryKeyNotNull());
     }
 
     public function testForcePrimaryKeyNotNullCanBeEnabled(): void
@@ -112,6 +112,6 @@ class ConfigTest extends TestCase
             '#sourceKbcToken' => 'token',
             'forcePrimaryKeyNotNull' => true,
         ]);
-        $this->assertTrue($config->forcePrimaryKeyNotNull());
+        self::assertTrue($config->forcePrimaryKeyNotNull());
     }
 }
