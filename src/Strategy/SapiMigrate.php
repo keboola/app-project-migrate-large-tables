@@ -85,7 +85,7 @@ class SapiMigrate implements MigrateInterface
                     $this->logger->info(sprintf('[dry-run] Creating table %s', $tableInfo['id']));
                 } else {
                     $this->logger->info(sprintf('Creating table %s', $tableInfo['id']));
-                    $this->storageModifier->createTable($tableInfo);
+                    $this->storageModifier->createTable($tableInfo, $config->forcePrimaryKeyNotNull());
                 }
             }
 

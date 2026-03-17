@@ -95,4 +95,23 @@ class ConfigTest extends TestCase
             ],
         ]);
     }
+
+    public function testForcePrimaryKeyNotNullDefaultIsFalse(): void
+    {
+        $config = $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+        ]);
+        $this->assertFalse($config->forcePrimaryKeyNotNull());
+    }
+
+    public function testForcePrimaryKeyNotNullCanBeEnabled(): void
+    {
+        $config = $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'forcePrimaryKeyNotNull' => true,
+        ]);
+        $this->assertTrue($config->forcePrimaryKeyNotNull());
+    }
 }

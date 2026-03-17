@@ -27,6 +27,7 @@ class ConfigDefinition extends BaseConfigDefinition
                 ->booleanNode('preserveTimestamp')->defaultFalse()->end()
                 ->arrayNode('tables')->prototype('scalar')->end()->end()
                 ->booleanNode('migrateData')->defaultTrue()->end()
+                ->booleanNode('forcePrimaryKeyNotNull')->defaultFalse()->end()
                 ->arrayNode('gcsLargeTable')
                     ->addDefaultsIfNotSet()
                     ->children()

@@ -249,6 +249,11 @@ class Config extends BaseConfig
         return (bool) $this->getValue(['parameters', 'migrateData'], true);
     }
 
+    public function forcePrimaryKeyNotNull(): bool
+    {
+        return (bool) $this->getValue(['parameters', 'forcePrimaryKeyNotNull']);
+    }
+
     public function getGcsLargeTableParallelChunks(): int
     {
         return $this->getIntValue(['parameters', 'gcsLargeTable', 'parallelChunks'], 3);
