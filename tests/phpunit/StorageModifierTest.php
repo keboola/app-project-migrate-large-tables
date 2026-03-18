@@ -374,7 +374,8 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
             ->with($bucketId)
             ->willReturn(['backend' => 'bigquery']);
 
@@ -399,12 +400,14 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
             ->with($bucketId)
             ->willReturn(['backend' => 'bigquery']);
 
         $client->expects($this->once())
-            ->method('createTableDefinition');
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->anything());
 
         $modifier = new StorageModifier($client);
         $modifier->createTable($this->buildTableInfo(
