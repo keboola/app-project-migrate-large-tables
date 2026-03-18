@@ -62,16 +62,17 @@ class SapiMigrateTest extends TestCase
         $tableInfo = $this->buildTableInfo('snowflake');
         $fileInfo = $this->buildFileInfo();
 
-        $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('getFile')->willReturn($fileInfo);
-        $sourceClient->method('downloadFile');
+        $sourceClient->expects($this->once())->method('getTable')->with($tableInfo['id'])->willReturn($tableInfo);
+        $sourceClient->expects($this->once())->method('getFile')->with(123)->willReturn($fileInfo);
+        $sourceClient->expects($this->once())->method('downloadFile');
 
-        $targetClient->method('bucketExists')->willReturn(true);
-        $targetClient->method('tableExists')->willReturn(false);
-        $targetClient->method('getBucket')->willReturn(['backend' => 'bigquery']);
-        $targetClient->method('uploadFile')->willReturn(456);
-        $targetClient->method('writeTableAsyncDirect');
-        $targetClient->method('createTableDefinition');
+        $targetClient->expects($this->once())->method('bucketExists')->with('in.c-test')->willReturn(true);
+        $targetClient->expects($this->once())->method('tableExists')->with($tableInfo['id'])->willReturn(false);
+        $targetClient->expects($this->once())->method('getBucket')
+            ->with('in.c-test')->willReturn(['backend' => 'bigquery']);
+        $targetClient->expects($this->once())->method('uploadFile')->willReturn(456);
+        $targetClient->expects($this->once())->method('writeTableAsyncDirect');
+        $targetClient->expects($this->never())->method('createTableDefinition');
 
         $sourceClient->expects($this->once())
             ->method('exportTableAsync')
@@ -93,15 +94,16 @@ class SapiMigrateTest extends TestCase
         $tableInfo = $this->buildTableInfo('snowflake');
         $fileInfo = $this->buildFileInfo();
 
-        $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('getFile')->willReturn($fileInfo);
-        $sourceClient->method('downloadFile');
+        $sourceClient->expects($this->once())->method('getTable')->with($tableInfo['id'])->willReturn($tableInfo);
+        $sourceClient->expects($this->once())->method('getFile')->with(123)->willReturn($fileInfo);
+        $sourceClient->expects($this->once())->method('downloadFile');
 
-        $targetClient->method('bucketExists')->willReturn(true);
-        $targetClient->method('tableExists')->willReturn(false);
-        $targetClient->method('getBucket')->willReturn(['backend' => 'bigquery']);
-        $targetClient->method('uploadFile')->willReturn(456);
-        $targetClient->method('writeTableAsyncDirect');
+        $targetClient->expects($this->once())->method('bucketExists')->with('in.c-test')->willReturn(true);
+        $targetClient->expects($this->once())->method('tableExists')->with($tableInfo['id'])->willReturn(false);
+        $targetClient->expects($this->once())->method('getBucket')
+            ->with('in.c-test')->willReturn(['backend' => 'bigquery']);
+        $targetClient->expects($this->once())->method('uploadFile')->willReturn(456);
+        $targetClient->expects($this->once())->method('writeTableAsyncDirect');
 
         $sourceClient->expects($this->once())
             ->method('exportTableAsync')
@@ -123,15 +125,16 @@ class SapiMigrateTest extends TestCase
         $tableInfo = $this->buildTableInfo('snowflake');
         $fileInfo = $this->buildFileInfo();
 
-        $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('getFile')->willReturn($fileInfo);
-        $sourceClient->method('downloadFile');
+        $sourceClient->expects($this->once())->method('getTable')->with($tableInfo['id'])->willReturn($tableInfo);
+        $sourceClient->expects($this->once())->method('getFile')->with(123)->willReturn($fileInfo);
+        $sourceClient->expects($this->once())->method('downloadFile');
 
-        $targetClient->method('bucketExists')->willReturn(true);
-        $targetClient->method('tableExists')->willReturn(false);
-        $targetClient->method('getBucket')->willReturn(['backend' => 'snowflake']);
-        $targetClient->method('uploadFile')->willReturn(456);
-        $targetClient->method('writeTableAsyncDirect');
+        $targetClient->expects($this->once())->method('bucketExists')->with('in.c-test')->willReturn(true);
+        $targetClient->expects($this->once())->method('tableExists')->with($tableInfo['id'])->willReturn(false);
+        $targetClient->expects($this->once())->method('getBucket')
+            ->with('in.c-test')->willReturn(['backend' => 'snowflake']);
+        $targetClient->expects($this->once())->method('uploadFile')->willReturn(456);
+        $targetClient->expects($this->once())->method('writeTableAsyncDirect');
 
         $sourceClient->expects($this->once())
             ->method('exportTableAsync')
@@ -153,14 +156,15 @@ class SapiMigrateTest extends TestCase
         $tableInfo = $this->buildTableInfo('bigquery');
         $fileInfo = $this->buildFileInfo();
 
-        $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('getFile')->willReturn($fileInfo);
-        $sourceClient->method('downloadFile');
+        $sourceClient->expects($this->once())->method('getTable')->with($tableInfo['id'])->willReturn($tableInfo);
+        $sourceClient->expects($this->once())->method('getFile')->with(123)->willReturn($fileInfo);
+        $sourceClient->expects($this->once())->method('downloadFile');
 
-        $targetClient->method('bucketExists')->willReturn(true);
-        $targetClient->method('tableExists')->willReturn(false);
-        $targetClient->method('uploadFile')->willReturn(456);
-        $targetClient->method('writeTableAsyncDirect');
+        $targetClient->expects($this->once())->method('bucketExists')->with('in.c-test')->willReturn(true);
+        $targetClient->expects($this->once())->method('tableExists')->with($tableInfo['id'])->willReturn(false);
+        $targetClient->expects($this->never())->method('getBucket');
+        $targetClient->expects($this->once())->method('uploadFile')->willReturn(456);
+        $targetClient->expects($this->once())->method('writeTableAsyncDirect');
 
         $sourceClient->expects($this->once())
             ->method('exportTableAsync')
@@ -183,19 +187,21 @@ class SapiMigrateTest extends TestCase
         $tableInfo2 = $this->buildTableInfo('snowflake', 'in.c-test.table2');
         $fileInfo = $this->buildFileInfo();
 
-        $sourceClient->method('getTable')->willReturnOnConsecutiveCalls($tableInfo1, $tableInfo2);
-        $sourceClient->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
-        $sourceClient->method('getFile')->willReturn($fileInfo);
-        $sourceClient->method('downloadFile');
+        $sourceClient->expects($this->exactly(2))->method('getTable')
+            ->willReturnOnConsecutiveCalls($tableInfo1, $tableInfo2);
+        $sourceClient->expects($this->exactly(2))->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
+        $sourceClient->expects($this->exactly(2))->method('getFile')->willReturn($fileInfo);
+        $sourceClient->expects($this->exactly(2))->method('downloadFile');
 
-        $targetClient->method('bucketExists')->willReturn(true);
-        $targetClient->method('tableExists')->willReturn(false);
+        $targetClient->expects($this->exactly(2))->method('bucketExists')->willReturn(true);
+        $targetClient->expects($this->exactly(2))->method('tableExists')->willReturn(false);
         // getBucket should be called only once due to caching
         $targetClient->expects($this->once())
             ->method('getBucket')
+            ->with('in.c-test')
             ->willReturn(['backend' => 'bigquery']);
-        $targetClient->method('uploadFile')->willReturn(456);
-        $targetClient->method('writeTableAsyncDirect');
+        $targetClient->expects($this->exactly(2))->method('uploadFile')->willReturn(456);
+        $targetClient->expects($this->exactly(2))->method('writeTableAsyncDirect');
 
         $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
         $migrate->migrate($this->buildConfig(['in.c-test.table1', 'in.c-test.table2']));
