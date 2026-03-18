@@ -386,6 +386,7 @@ class StorageModifierTest extends TestCase
 
         $this->expectException(UserException::class);
         $this->expectExceptionMessage('Column "amount" has type NUMBER(38,12)');
+
         $modifier->createTable($this->buildTableInfo(
             sourceBackend: 'snowflake',
             bucketId: $bucketId,
@@ -419,55 +420,6 @@ class StorageModifierTest extends TestCase
         ));
     }
 
-    public function testCreateTypedTableSnowflakeToBigqueryThrowsForNumericScaleOver9(): void
-    {
-        $bucketId = 'in.c-test';
-
-        $client = $this->createMock(Client::class);
-        $client->method('getBucket')
-            ->with($bucketId)
-            ->willReturn(['backend' => 'bigquery']);
-
-        $client->expects($this->never())
-            ->method('createTableDefinition');
-
-        $modifier = new StorageModifier($client);
-
-        $this->expectException(UserException::class);
-        $this->expectExceptionMessageMatches('/Column "amount"/');
-        $this->expectExceptionMessageMatches('/NUMBER\(38,12\)/');
-
-        $modifier->createTable($this->buildTableInfo(
-            sourceBackend: 'snowflake',
-            bucketId: $bucketId,
-            columns: [
-                $this->buildColumnDef('amount', 'NUMBER', 'NUMERIC', true, '38,12'),
-            ],
-        ));
-    }
-
-    public function testCreateTypedTableSnowflakeToBigqueryAllowsNumericScaleOf9(): void
-    {
-        $bucketId = 'in.c-test';
-
-        $client = $this->createMock(Client::class);
-        $client->method('getBucket')
-            ->with($bucketId)
-            ->willReturn(['backend' => 'bigquery']);
-
-        $client->expects($this->once())
-            ->method('createTableDefinition');
-
-        $modifier = new StorageModifier($client);
-        $modifier->createTable($this->buildTableInfo(
-            sourceBackend: 'snowflake',
-            bucketId: $bucketId,
-            columns: [
-                $this->buildColumnDef('amount', 'NUMBER', 'NUMERIC', true, '38,9'),
-            ],
-        ));
-    }
-
     public function testForcePrimaryKeyNotNullOverridesNullableForPkColumns(): void
     {
         $bucketId = 'in.c-test';
@@ -475,14 +427,16 @@ class StorageModifierTest extends TestCase
         $client = $this->createMock(Client::class);
         $client->expects($this->once())
             ->method('getBucket')
+            ->with($bucketId)
             ->willReturn(['backend' => 'snowflake']);
 
         $capturedData = null;
         $client->expects($this->once())
             ->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $modifier = new StorageModifier($client);
         $modifier->createTable(
@@ -510,14 +464,16 @@ class StorageModifierTest extends TestCase
         $client = $this->createMock(Client::class);
         $client->expects($this->once())
             ->method('getBucket')
+            ->with($bucketId)
             ->willReturn(['backend' => 'snowflake']);
 
         $capturedData = null;
         $client->expects($this->once())
             ->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $modifier = new StorageModifier($client);
         $modifier->createTable(

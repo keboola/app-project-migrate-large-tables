@@ -204,23 +204,26 @@ class SapiMigrateTest extends TestCase
         ]);
         $fileInfo = $this->buildFileInfo();
 
-        $sourceClient->method('getTable')->willReturn($tableInfo);
-        $sourceClient->method('getFile')->willReturn($fileInfo);
-        $sourceClient->method('downloadFile');
-        $sourceClient->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
+        $sourceClient->expects($this->once())->method('getTable')->with('in.c-test.table')->willReturn($tableInfo);
+        $sourceClient->expects($this->once())->method('getFile')->with(123)->willReturn($fileInfo);
+        $sourceClient->expects($this->once())->method('downloadFile');
+        $sourceClient->expects($this->once())->method('exportTableAsync')->willReturn(['file' => ['id' => 123]]);
 
-        $targetClient->method('bucketExists')->willReturn(true);
-        $targetClient->method('tableExists')->willReturn(false);
-        $targetClient->method('getBucket')->willReturn(['backend' => 'snowflake']);
-        $targetClient->method('uploadFile')->willReturn(456);
-        $targetClient->method('writeTableAsyncDirect');
+        $targetClient->expects($this->once())->method('bucketExists')->with('in.c-test')->willReturn(true);
+        $targetClient->expects($this->once())->method('tableExists')->with('in.c-test.table')->willReturn(false);
+        // getBucket is called twice: once from SapiMigrate::getDestinationBucketBackend, once from StorageModifier
+        $targetClient->expects($this->exactly(2))->method('getBucket')
+            ->with('in.c-test')->willReturn(['backend' => 'snowflake']);
+        $targetClient->expects($this->once())->method('uploadFile')->willReturn(456);
+        $targetClient->expects($this->once())->method('writeTableAsyncDirect');
 
         $capturedData = null;
         $targetClient->expects($this->once())
             ->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+            ->with('in.c-test', $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $migrate = new SapiMigrate($sourceClient, $targetClient, new NullLogger());
         $migrate->migrate($this->buildConfig(['in.c-test.table'], forcePrimaryKeyNotNull: true));
