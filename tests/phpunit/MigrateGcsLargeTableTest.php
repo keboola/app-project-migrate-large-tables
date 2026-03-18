@@ -21,13 +21,13 @@ class MigrateGcsLargeTableTest extends TestCase
         $manifestJson = json_encode(['entries' => $manifestEntries]);
 
         $storageObject = $this->createMock(StorageObject::class);
-        $storageObject->method('downloadAsString')->willReturn($manifestJson);
+        $storageObject->expects($this->once())->method('downloadAsString')->willReturn($manifestJson);
 
         $bucket = $this->createMock(Bucket::class);
-        $bucket->method('object')->willReturn($storageObject);
+        $bucket->expects($this->once())->method('object')->willReturn($storageObject);
 
         $gcsClient = $this->createMock(GoogleStorageClient::class);
-        $gcsClient->method('bucket')->willReturn($bucket);
+        $gcsClient->expects($this->once())->method('bucket')->willReturn($bucket);
 
         return fn(int $fileId) => $gcsClient;
     }
@@ -64,12 +64,12 @@ class MigrateGcsLargeTableTest extends TestCase
     private function buildSourceClient(string $gcsBucket = 'test-bucket'): Client
     {
         $sourceClient = $this->createMock(Client::class);
-        $sourceClient->method('getFile')->willReturn([
+        $sourceClient->expects($this->once())->method('getFile')->willReturn([
             'gcsPath' => ['bucket' => $gcsBucket, 'key' => 'path/to/file/'],
             'gcsCredentials' => [],
         ]);
-        $sourceClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
-        $sourceClient->method('getTokenString')->willReturn('source-token');
+        $sourceClient->expects($this->once())->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $sourceClient->expects($this->once())->method('getTokenString')->willReturn('source-token');
         return $sourceClient;
     }
 
@@ -96,9 +96,9 @@ class MigrateGcsLargeTableTest extends TestCase
         $tableId = 'in.c-test.my_table';
 
         $targetClient = $this->createMock(Client::class);
-        $targetClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
-        $targetClient->method('getTokenString')->willReturn('target-token');
-        $targetClient->method('getTable')->with($tableId)->willReturn(['primaryKey' => ['id']]);
+        $targetClient->expects($this->once())->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $targetClient->expects($this->once())->method('getTokenString')->willReturn('target-token');
+        $targetClient->expects($this->once())->method('getTable')->with($tableId)->willReturn(['primaryKey' => ['id']]);
         $targetClient->expects($this->once())->method('removeTablePrimaryKey')->with($tableId);
         $targetClient->expects($this->once())->method('createTablePrimaryKey')->with($tableId, ['id']);
         $targetClient->expects($this->once())->method('writeTableAsyncDirect');
@@ -123,9 +123,9 @@ class MigrateGcsLargeTableTest extends TestCase
         $tableId = 'in.c-test.my_table';
 
         $targetClient = $this->createMock(Client::class);
-        $targetClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
-        $targetClient->method('getTokenString')->willReturn('target-token');
-        $targetClient->method('getTable')->with($tableId)->willReturn(['primaryKey' => ['id']]);
+        $targetClient->expects($this->once())->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $targetClient->expects($this->once())->method('getTokenString')->willReturn('target-token');
+        $targetClient->expects($this->once())->method('getTable')->with($tableId)->willReturn(['primaryKey' => ['id']]);
         $targetClient->expects($this->once())->method('removeTablePrimaryKey')->with($tableId);
         $targetClient->expects($this->once())->method('createTablePrimaryKey')->with($tableId, ['id']);
 
@@ -154,9 +154,9 @@ class MigrateGcsLargeTableTest extends TestCase
         $tableId = 'in.c-test.my_table';
 
         $targetClient = $this->createMock(Client::class);
-        $targetClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
-        $targetClient->method('getTokenString')->willReturn('target-token');
-        $targetClient->method('getTable')->willReturn(['primaryKey' => []]);
+        $targetClient->expects($this->once())->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $targetClient->expects($this->once())->method('getTokenString')->willReturn('target-token');
+        $targetClient->expects($this->once())->method('getTable')->willReturn(['primaryKey' => []]);
         $targetClient->expects($this->exactly(3))->method('writeTableAsyncDirect');
 
         $migrator = new MigrateGcsLargeTable(
@@ -185,9 +185,9 @@ class MigrateGcsLargeTableTest extends TestCase
         $tableId = 'in.c-test.my_table';
 
         $targetClient = $this->createMock(Client::class);
-        $targetClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
-        $targetClient->method('getTokenString')->willReturn('target-token');
-        $targetClient->method('getTable')->willReturn(['primaryKey' => []]);
+        $targetClient->expects($this->once())->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $targetClient->expects($this->once())->method('getTokenString')->willReturn('target-token');
+        $targetClient->expects($this->once())->method('getTable')->willReturn(['primaryKey' => []]);
         $targetClient->expects($this->never())->method('writeTableAsyncDirect');
 
         $migrator = new MigrateGcsLargeTable(
@@ -219,12 +219,12 @@ class MigrateGcsLargeTableTest extends TestCase
         $tableId = 'in.c-test.my_table';
 
         $targetClient = $this->createMock(Client::class);
-        $targetClient->method('getApiUrl')->willReturn('https://connection.keboola.com');
-        $targetClient->method('getTokenString')->willReturn('target-token');
-        $targetClient->method('getTable')->willReturn(['primaryKey' => []]);
+        $targetClient->expects($this->once())->method('getApiUrl')->willReturn('https://connection.keboola.com');
+        $targetClient->expects($this->once())->method('getTokenString')->willReturn('target-token');
+        $targetClient->expects($this->once())->method('getTable')->willReturn(['primaryKey' => []]);
         $targetClient->expects($this->never())->method('removeTablePrimaryKey');
         $targetClient->expects($this->never())->method('createTablePrimaryKey');
-        $targetClient->method('writeTableAsyncDirect');
+        $targetClient->expects($this->once())->method('writeTableAsyncDirect');
 
         $migrator = new MigrateGcsLargeTable(
             $this->buildSourceClient(),

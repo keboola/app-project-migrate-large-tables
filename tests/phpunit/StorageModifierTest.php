@@ -88,8 +88,8 @@ class StorageModifierTest extends TestCase
             ],
         ));
 
-        $this->assertNotNull($capturedData);
-        $this->assertSame([
+        self::assertNotNull($capturedData);
+        self::assertSame([
             [
                 'name' => 'id',
                 'definition' => ['type' => 'INTEGER', 'nullable' => false],
@@ -113,7 +113,8 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
             ->with($bucketId)
             ->willReturn(['backend' => 'bigquery']);
 
@@ -154,8 +155,8 @@ class StorageModifierTest extends TestCase
             ['name' => 'amount', 'definition' => ['type' => 'NUMERIC', 'nullable' => true], 'basetype' => 'NUMERIC'],
         ];
 
-        $this->assertNotNull($capturedData);
-        $this->assertSame($expectedColumns, $capturedData['columns']);
+        self::assertNotNull($capturedData);
+        self::assertSame($expectedColumns, $capturedData['columns']);
     }
 
     public function testCreateTypedTableCrossBackendBigqueryToSnowflake(): void
@@ -163,7 +164,8 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
             ->with($bucketId)
             ->willReturn(['backend' => 'snowflake']);
 
@@ -206,8 +208,8 @@ class StorageModifierTest extends TestCase
             ['name' => 'amount', 'definition' => ['type' => 'NUMBER', 'nullable' => true], 'basetype' => 'NUMERIC'],
         ];
 
-        $this->assertNotNull($capturedData);
-        $this->assertSame($expectedColumns, $capturedData['columns']);
+        self::assertNotNull($capturedData);
+        self::assertSame($expectedColumns, $capturedData['columns']);
     }
 
     public function testCreateTypedTableCrossBackendNullBasetypeFallsBackToString(): void
@@ -215,14 +217,18 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
+            ->with($bucketId)
             ->willReturn(['backend' => 'bigquery']);
 
         $capturedData = null;
-        $client->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+        $client->expects($this->once())
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $modifier = new StorageModifier($client);
         $modifier->createTable($this->buildTableInfo(
@@ -233,8 +239,8 @@ class StorageModifierTest extends TestCase
             ],
         ));
 
-        $this->assertNotNull($capturedData);
-        $this->assertSame('STRING', $capturedData['columns'][0]['definition']['type']);
+        self::assertNotNull($capturedData);
+        self::assertSame('STRING', $capturedData['columns'][0]['definition']['type']);
     }
 
     public function testCreateTypedTableCrossBackendUnknownBasetypeFallsBackToString(): void
@@ -242,14 +248,18 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
+            ->with($bucketId)
             ->willReturn(['backend' => 'snowflake']);
 
         $capturedData = null;
-        $client->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+        $client->expects($this->once())
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $modifier = new StorageModifier($client);
         $modifier->createTable($this->buildTableInfo(
@@ -260,8 +270,8 @@ class StorageModifierTest extends TestCase
             ],
         ));
 
-        $this->assertNotNull($capturedData);
-        $this->assertSame('VARCHAR', $capturedData['columns'][0]['definition']['type']);
+        self::assertNotNull($capturedData);
+        self::assertSame('VARCHAR', $capturedData['columns'][0]['definition']['type']);
     }
 
     public function testCreateTypedTableCrossBackendDoesNotCopyLengthOrDefault(): void
@@ -269,14 +279,18 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
+            ->with($bucketId)
             ->willReturn(['backend' => 'bigquery']);
 
         $capturedData = null;
-        $client->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+        $client->expects($this->once())
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $modifier = new StorageModifier($client);
         $modifier->createTable($this->buildTableInfo(
@@ -287,10 +301,10 @@ class StorageModifierTest extends TestCase
             ],
         ));
 
-        $this->assertNotNull($capturedData);
+        self::assertNotNull($capturedData);
         $columnDef = $capturedData['columns'][0]['definition'];
-        $this->assertArrayNotHasKey('length', $columnDef);
-        $this->assertArrayNotHasKey('default', $columnDef);
+        self::assertArrayNotHasKey('length', $columnDef);
+        self::assertArrayNotHasKey('default', $columnDef);
     }
 
     public function testGetDestinationBucketBackendIsCachedAcrossMultipleTables(): void
@@ -304,7 +318,7 @@ class StorageModifierTest extends TestCase
             ->with($bucketId)
             ->willReturn(['backend' => 'snowflake']);
 
-        $client->method('createTableDefinition');
+        $client->expects($this->exactly(2))->method('createTableDefinition');
 
         $modifier = new StorageModifier($client);
 
@@ -325,14 +339,18 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
+            ->with($bucketId)
             ->willReturn(['backend' => 'snowflake']);
 
         $capturedData = null;
-        $client->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+        $client->expects($this->once())
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $modifier = new StorageModifier($client);
         $modifier->createTable($this->buildTableInfo(
@@ -345,9 +363,9 @@ class StorageModifierTest extends TestCase
             primaryKey: ['id'],
         ));
 
-        $this->assertNotNull($capturedData);
-        $this->assertSame(['id'], $capturedData['primaryKeysNames']);
-        $this->assertSame('my_table', $capturedData['name']);
+        self::assertNotNull($capturedData);
+        self::assertSame(['id'], $capturedData['primaryKeysNames']);
+        self::assertSame('my_table', $capturedData['name']);
     }
 
     public function testCreateTypedTableWithUnknownDestinationBackendUsesBasetypeAsType(): void
@@ -355,14 +373,18 @@ class StorageModifierTest extends TestCase
         $bucketId = 'in.c-test';
 
         $client = $this->createMock(Client::class);
-        $client->method('getBucket')
+        $client->expects($this->once())
+            ->method('getBucket')
+            ->with($bucketId)
             ->willReturn(['backend' => 'exasol']);
 
         $capturedData = null;
-        $client->method('createTableDefinition')
-            ->willReturnCallback(function (string $id, array $data) use (&$capturedData): void {
+        $client->expects($this->once())
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
                 $capturedData = $data;
-            });
+                return true;
+            }));
 
         $modifier = new StorageModifier($client);
         $modifier->createTable($this->buildTableInfo(
@@ -374,9 +396,9 @@ class StorageModifierTest extends TestCase
             ],
         ));
 
-        $this->assertNotNull($capturedData);
+        self::assertNotNull($capturedData);
         // For unknown backends, basetype is used directly as type
-        $this->assertSame('INTEGER', $capturedData['columns'][0]['definition']['type']);
-        $this->assertSame('STRING', $capturedData['columns'][1]['definition']['type']);
+        self::assertSame('INTEGER', $capturedData['columns'][0]['definition']['type']);
+        self::assertSame('STRING', $capturedData['columns'][1]['definition']['type']);
     }
 }

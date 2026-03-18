@@ -26,8 +26,8 @@ class ConfigTest extends TestCase
             '#sourceKbcToken' => 'token',
         ]);
 
-        $this->assertSame(3, $config->getGcsLargeTableParallelChunks());
-        $this->assertSame(150, $config->getGcsLargeTableChunkSize());
+        self::assertSame(3, $config->getGcsLargeTableParallelChunks());
+        self::assertSame(150, $config->getGcsLargeTableChunkSize());
     }
 
     public function testGcsLargeTableCustomValues(): void
@@ -41,8 +41,8 @@ class ConfigTest extends TestCase
             ],
         ]);
 
-        $this->assertSame(5, $config->getGcsLargeTableParallelChunks());
-        $this->assertSame(200, $config->getGcsLargeTableChunkSize());
+        self::assertSame(5, $config->getGcsLargeTableParallelChunks());
+        self::assertSame(200, $config->getGcsLargeTableChunkSize());
     }
 
     public function testParallelChunksMinimumIsOne(): void
