@@ -386,6 +386,7 @@ class StorageModifierTest extends TestCase
 
         $this->expectException(UserException::class);
         $this->expectExceptionMessage('Column "amount" has type NUMBER(38,12)');
+
         $modifier->createTable($this->buildTableInfo(
             sourceBackend: 'snowflake',
             bucketId: $bucketId,
@@ -417,6 +418,78 @@ class StorageModifierTest extends TestCase
                 $this->buildColumnDef('amount', 'NUMBER', 'NUMERIC', true, '38,9'),
             ],
         ));
+    }
+
+    public function testForcePrimaryKeyNotNullOverridesNullableForPkColumns(): void
+    {
+        $bucketId = 'in.c-test';
+
+        $client = $this->createMock(Client::class);
+        $client->expects($this->once())
+            ->method('getBucket')
+            ->with($bucketId)
+            ->willReturn(['backend' => 'snowflake']);
+
+        $capturedData = null;
+        $client->expects($this->once())
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
+                $capturedData = $data;
+                return true;
+            }));
+
+        $modifier = new StorageModifier($client);
+        $modifier->createTable(
+            $this->buildTableInfo(
+                sourceBackend: 'snowflake',
+                bucketId: $bucketId,
+                columns: [
+                    $this->buildColumnDef('id', 'INTEGER', 'INTEGER', true),
+                    $this->buildColumnDef('name', 'VARCHAR', 'STRING', true),
+                ],
+                primaryKey: ['id'],
+            ),
+            forcePrimaryKeyNotNull: true,
+        );
+
+        self::assertNotNull($capturedData);
+        self::assertFalse($capturedData['columns'][0]['definition']['nullable'], 'PK column must be not nullable');
+        self::assertTrue($capturedData['columns'][1]['definition']['nullable'], 'Non-PK column must stay nullable');
+    }
+
+    public function testForcePrimaryKeyNotNullFalsePreservesNullable(): void
+    {
+        $bucketId = 'in.c-test';
+
+        $client = $this->createMock(Client::class);
+        $client->expects($this->once())
+            ->method('getBucket')
+            ->with($bucketId)
+            ->willReturn(['backend' => 'snowflake']);
+
+        $capturedData = null;
+        $client->expects($this->once())
+            ->method('createTableDefinition')
+            ->with($bucketId, $this->callback(function (array $data) use (&$capturedData) {
+                $capturedData = $data;
+                return true;
+            }));
+
+        $modifier = new StorageModifier($client);
+        $modifier->createTable(
+            $this->buildTableInfo(
+                sourceBackend: 'snowflake',
+                bucketId: $bucketId,
+                columns: [
+                    $this->buildColumnDef('id', 'INTEGER', 'INTEGER', true),
+                ],
+                primaryKey: ['id'],
+            ),
+            forcePrimaryKeyNotNull: false,
+        );
+
+        self::assertNotNull($capturedData);
+        self::assertTrue($capturedData['columns'][0]['definition']['nullable'], 'Without flag, nullable stays true');
     }
 
     public function testCreateTypedTableWithUnknownDestinationBackendUsesBasetypeAsType(): void

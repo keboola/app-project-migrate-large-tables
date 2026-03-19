@@ -44,6 +44,7 @@ The `config.json` configuration file contains the following properties:
     - `gcsLargeTable` - object (optional): Configuration for parallel GCS large table migration
         - `parallelChunks` - integer (optional, default `3`, min `1`, max `20`): Number of chunks to migrate in parallel
         - `chunkSize` - integer (optional, default `150`, min `1`): Number of slice files per chunk
+    - `forcePrimaryKeyNotNull` - boolean (optional): If set to `true`, primary key columns will always be created as `NOT NULL` during typed table migration. Useful when source primary key columns are marked nullable but the target backend (e.g. BigQuery) requires primary keys to be non-nullable. Default: `false`.
     - `db` - object (optional in `database` mode; extends the `db` object in `image_parameters`):
         - `host` - string (required): Snowflake host
         - `username` - string (required): Snowflake username
