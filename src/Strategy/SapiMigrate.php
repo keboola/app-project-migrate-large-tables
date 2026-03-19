@@ -28,6 +28,8 @@ class SapiMigrate implements MigrateInterface
         private readonly Client $targetClient,
         private readonly LoggerInterface $logger,
         private readonly bool $dryRun = false,
+        private readonly int $parallelChunks = 3,
+        private readonly int $chunkSize = 150,
     ) {
         $this->storageModifier = new StorageModifier($this->targetClient);
         $this->migrateGcsLargeTable = new MigrateGcsLargeTable(
@@ -35,6 +37,8 @@ class SapiMigrate implements MigrateInterface
             $this->targetClient,
             $this->logger,
             $this->dryRun,
+            $this->parallelChunks,
+            $this->chunkSize,
         );
     }
 
@@ -102,26 +106,25 @@ class SapiMigrate implements MigrateInterface
         $sourceFileId = $file['file']['id'];
         $sourceFileInfo = $this->sourceClient->getFile($sourceFileId);
 
+        if ($sourceFileInfo['provider'] === 'gcp' &&
+            $sourceFileInfo['isSliced'] === true &&
+            $sourceFileInfo['sizeBytes'] > self::LARGE_GCS_TABLE_SIZE
+        ) {
+            $this->migrateGcsLargeTable->migrate(
+                $sourceFileId,
+                $sourceTableInfo,
+                $config->preserveTimestamp(),
+            );
+            return;
+        }
+
         $tmp = new Temp();
         $optionUploadedFile = new FileUploadOptions();
         $optionUploadedFile
             ->setFederationToken(true)
             ->setFileName($sourceTableInfo['id'])
         ;
-        $tableSize = $sourceFileInfo['sizeBytes'];
-        if ($sourceFileInfo['provider'] === 'gcp' &&
-            $sourceFileInfo['isSliced'] === true &&
-            $tableSize > self::LARGE_GCS_TABLE_SIZE
-        ) {
-            $this->migrateGcsLargeTable->migrate(
-                $sourceFileId,
-                $sourceTableInfo,
-                $config->preserveTimestamp(),
-                $tmp,
-            );
-            $tmp->remove();
-            return;
-        } elseif ($sourceFileInfo['isSliced'] === true) {
+        if ($sourceFileInfo['isSliced'] === true) {
             $optionUploadedFile->setIsSliced(true);
 
             $this->logger->info(sprintf('Downloading table %s', $sourceTableInfo['id']));

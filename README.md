@@ -41,6 +41,9 @@ The `config.json` configuration file contains the following properties:
     - `sourceKbcUrl` - string (required): URL of the source project
     - `sourceKbcToken` - string (required): Storage API token of the source project
     - `tables` - array (optional): List of tables to migrate. If not set, all tables will be migrated.
+    - `gcsLargeTable` - object (optional): Configuration for parallel GCS large table migration
+        - `parallelChunks` - integer (optional, default `3`, min `1`, max `20`): Number of chunks to migrate in parallel
+        - `chunkSize` - integer (optional, default `150`, min `1`): Number of slice files per chunk
     - `db` - object (optional in `database` mode; extends the `db` object in `image_parameters`):
         - `host` - string (required): Snowflake host
         - `username` - string (required): Snowflake username
