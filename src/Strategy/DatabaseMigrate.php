@@ -95,6 +95,9 @@ class DatabaseMigrate implements MigrateInterface
         ));
         $this->targetConnection->useRole($currentRole);
 
+        /** @var string[] $failedTables */
+        $failedTables = [];
+
         foreach ($schemas as $schema) {
             $schemaName = $schema['name'];
             if (in_array($schemaName, self::SKIP_CLONE_SCHEMAS, true)) {
@@ -119,11 +122,23 @@ class DatabaseMigrate implements MigrateInterface
                 }
             }
 
-            $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            $schemaFailedTables = $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            array_push($failedTables, ...$schemaFailedTables);
+        }
+
+        if ($failedTables !== []) {
+            $this->logger->warning(sprintf(
+                'Migration completed with %d failed table(s): %s',
+                count($failedTables),
+                implode(', ', $failedTables),
+            ));
         }
     }
 
-    private function migrateSchema(array $tablesWhiteList, string $schemaName): void
+    /**
+     * @return string[] List of table IDs that failed migration
+     */
+    private function migrateSchema(array $tablesWhiteList, string $schemaName): array
     {
         $this->logger->info(sprintf('Migrating schema %s', $schemaName));
         $currentRole = $this->targetConnection->getCurrentRole();
@@ -134,6 +149,9 @@ class DatabaseMigrate implements MigrateInterface
             QueryBuilder::quoteIdentifier($schemaName),
         ));
         $this->targetConnection->useRole($currentRole);
+
+        /** @var string[] $failedTables */
+        $failedTables = [];
 
         foreach ($tables as $table) {
             $tableId = sprintf('%s.%s', $schemaName, $table['name']);
@@ -146,14 +164,24 @@ class DatabaseMigrate implements MigrateInterface
                 continue;
             }
 
-            if (!$this->targetSapiClient->tableExists($tableId)) {
-                $this->logger->info(sprintf('Creating table "%s".', $tableId));
-                $this->storageModifier->createTable(
-                    $this->sourceSapiClient->getTable($tableId),
-                );
-            }
+            try {
+                if (!$this->targetSapiClient->tableExists($tableId)) {
+                    $this->logger->info(sprintf('Creating table "%s".', $tableId));
+                    $this->storageModifier->createTable(
+                        $this->sourceSapiClient->getTable($tableId),
+                    );
+                }
 
-            $this->migrateTable($schemaName, $table['name']);
+                $this->migrateTable($schemaName, $table['name']);
+            } catch (Throwable $e) {
+                $this->logger->warning(sprintf(
+                    'Table migration failed for "%s": %s',
+                    $tableId,
+                    $e->getMessage(),
+                ));
+                $failedTables[] = $tableId;
+                continue;
+            }
         }
 
         if ($this->dryRun === false) {
@@ -162,6 +190,8 @@ class DatabaseMigrate implements MigrateInterface
         } else {
             $this->logger->info(sprintf('[dry-run] Refreshing table information in bucket %s', $schemaName));
         }
+
+        return $failedTables;
     }
 
     private function migrateTable(string $schemaName, string $tableName): void

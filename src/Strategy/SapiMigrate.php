@@ -47,6 +47,9 @@ class SapiMigrate implements MigrateInterface
 
     public function migrate(Config $config): void
     {
+        /** @var string[] $failedTables */
+        $failedTables = [];
+
         foreach ($config->getMigrateTables() ?: $this->getAllTables() as $tableId) {
             try {
                 $tableInfo = $this->sourceClient->getTable($tableId);
@@ -56,6 +59,7 @@ class SapiMigrate implements MigrateInterface
                     $tableId,
                     $e->getMessage(),
                 ));
+                $failedTables[] = $tableId;
                 continue;
             }
             if ($tableInfo['bucket']['stage'] === 'sys') {
@@ -89,7 +93,25 @@ class SapiMigrate implements MigrateInterface
                 }
             }
 
-            $this->migrateTable($tableInfo, $config);
+            try {
+                $this->migrateTable($tableInfo, $config);
+            } catch (ClientException $e) {
+                $this->logger->warning(sprintf(
+                    'Table migration failed for "%s": %s',
+                    $tableId,
+                    $e->getMessage(),
+                ));
+                $failedTables[] = $tableId;
+                continue;
+            }
+        }
+
+        if ($failedTables !== []) {
+            $this->logger->warning(sprintf(
+                'Migration completed with %d failed table(s): %s',
+                count($failedTables),
+                implode(', ', $failedTables),
+            ));
         }
     }
 
