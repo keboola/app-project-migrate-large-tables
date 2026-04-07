@@ -46,7 +46,7 @@ class SapiMigrate implements MigrateInterface
         );
     }
 
-    public function migrate(Config $config): void
+    public function migrate(Config $config): array
     {
         $failedTables = [];
         foreach ($config->getMigrateTables() ?: $this->getAllTables() as $tableId) {
@@ -111,6 +111,8 @@ class SapiMigrate implements MigrateInterface
                 implode(', ', $failedTables),
             ));
         }
+
+        return $failedTables;
     }
 
     private function migrateTable(array $sourceTableInfo, Config $config): void

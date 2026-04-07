@@ -35,7 +35,7 @@ class DatabaseMigrate implements MigrateInterface
         $this->storageModifier = new StorageModifier($this->targetSapiClient);
     }
 
-    public function migrate(Config $config): void
+    public function migrate(Config $config): array
     {
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
@@ -47,16 +47,22 @@ class DatabaseMigrate implements MigrateInterface
         }
         $this->targetConnection->useRole($currentRole);
 
+        $failedTables = [];
         if ($config->shouldMigrateData()) {
-            $this->migrateData($config);
+            $failedTables = $this->migrateData($config);
         }
 
         if ($config->shouldDropReplicaDatabase()) {
             $this->dropReplicaDatabase();
         }
+
+        return $failedTables;
     }
 
-    public function migrateData(Config $config): void
+    /**
+     * @return string[] List of table IDs that failed migration
+     */
+    public function migrateData(Config $config): array
     {
         $databaseRole = $this->getSourceRole(
             $this->targetConnection,
@@ -95,6 +101,7 @@ class DatabaseMigrate implements MigrateInterface
         ));
         $this->targetConnection->useRole($currentRole);
 
+        $failedTables = [];
         foreach ($schemas as $schema) {
             $schemaName = $schema['name'];
             if (in_array($schemaName, self::SKIP_CLONE_SCHEMAS, true)) {
@@ -119,11 +126,25 @@ class DatabaseMigrate implements MigrateInterface
                 }
             }
 
-            $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            $schemaFailedTables = $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            array_push($failedTables, ...$schemaFailedTables);
         }
+
+        if ($failedTables !== []) {
+            $this->logger->warning(sprintf(
+                'Migration completed with %d failed table(s): %s',
+                count($failedTables),
+                implode(', ', $failedTables),
+            ));
+        }
+
+        return $failedTables;
     }
 
-    private function migrateSchema(array $tablesWhiteList, string $schemaName): void
+    /**
+     * @return string[] List of table IDs that failed migration
+     */
+    private function migrateSchema(array $tablesWhiteList, string $schemaName): array
     {
         $this->logger->info(sprintf('Migrating schema %s', $schemaName));
         $currentRole = $this->targetConnection->getCurrentRole();
@@ -182,6 +203,8 @@ class DatabaseMigrate implements MigrateInterface
         } else {
             $this->logger->info(sprintf('[dry-run] Refreshing table information in bucket %s', $schemaName));
         }
+
+        return $failedTables;
     }
 
     private function migrateTable(string $schemaName, string $tableName): void

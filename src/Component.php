@@ -100,7 +100,15 @@ class Component extends BaseComponent
                 throw new UserException(sprintf('Unknown mode "%s"', $this->getConfig()->getMode()));
         }
 
-        $strategy->migrate($this->getConfig());
+        $failedTables = $strategy->migrate($this->getConfig());
+
+        if ($failedTables !== []) {
+            throw new UserException(sprintf(
+                'Migration completed with %d failed table(s): %s',
+                count($failedTables),
+                implode(', ', $failedTables),
+            ));
+        }
     }
 
     public function createReplicationsAction(): array
