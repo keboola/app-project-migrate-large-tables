@@ -13,6 +13,7 @@ use Keboola\StorageApi\ClientException;
 use Keboola\StorageApi\Options\FileUploadOptions;
 use Keboola\Temp\Temp;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 class SapiMigrate implements MigrateInterface
 {
@@ -47,6 +48,7 @@ class SapiMigrate implements MigrateInterface
 
     public function migrate(Config $config): void
     {
+        $failedTables = [];
         foreach ($config->getMigrateTables() ?: $this->getAllTables() as $tableId) {
             try {
                 $tableInfo = $this->sourceClient->getTable($tableId);
@@ -68,28 +70,46 @@ class SapiMigrate implements MigrateInterface
                 continue;
             }
 
-            if (!in_array($tableInfo['bucket']['id'], $this->bucketsExist) &&
-                !$this->targetClient->bucketExists($tableInfo['bucket']['id'])) {
-                if ($this->dryRun) {
-                    $this->logger->info(sprintf('[dry-run] Creating bucket %s', $tableInfo['bucket']['id']));
-                } else {
-                    $this->logger->info(sprintf('Creating bucket %s', $tableInfo['bucket']['id']));
-                    $this->bucketsExist[] = $tableInfo['bucket']['id'];
+            try {
+                if (!in_array($tableInfo['bucket']['id'], $this->bucketsExist) &&
+                    !$this->targetClient->bucketExists($tableInfo['bucket']['id'])) {
+                    if ($this->dryRun) {
+                        $this->logger->info(sprintf('[dry-run] Creating bucket %s', $tableInfo['bucket']['id']));
+                    } else {
+                        $this->logger->info(sprintf('Creating bucket %s', $tableInfo['bucket']['id']));
+                        $this->bucketsExist[] = $tableInfo['bucket']['id'];
 
-                    $this->storageModifier->createBucket($tableInfo['bucket']['id']);
+                        $this->storageModifier->createBucket($tableInfo['bucket']['id']);
+                    }
                 }
-            }
 
-            if (!$this->targetClient->tableExists($tableId)) {
-                if ($this->dryRun) {
-                    $this->logger->info(sprintf('[dry-run] Creating table %s', $tableInfo['id']));
-                } else {
-                    $this->logger->info(sprintf('Creating table %s', $tableInfo['id']));
-                    $this->storageModifier->createTable($tableInfo, $config->forcePrimaryKeyNotNull());
+                if (!$this->targetClient->tableExists($tableId)) {
+                    if ($this->dryRun) {
+                        $this->logger->info(sprintf('[dry-run] Creating table %s', $tableInfo['id']));
+                    } else {
+                        $this->logger->info(sprintf('Creating table %s', $tableInfo['id']));
+                        $this->storageModifier->createTable($tableInfo, $config->forcePrimaryKeyNotNull());
+                    }
                 }
-            }
 
-            $this->migrateTable($tableInfo, $config);
+                $this->migrateTable($tableInfo, $config);
+            } catch (Throwable $e) {
+                $this->logger->warning(sprintf(
+                    'Skipping migration of table "%s". Reason: "%s".',
+                    $tableId,
+                    $e->getMessage(),
+                ));
+                $failedTables[] = $tableId;
+                continue;
+            }
+        }
+
+        if ($failedTables !== []) {
+            $this->logger->warning(sprintf(
+                'Failed to migrate %d table(s): %s',
+                count($failedTables),
+                implode(', ', $failedTables),
+            ));
         }
     }
 
