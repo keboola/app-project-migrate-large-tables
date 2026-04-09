@@ -126,7 +126,7 @@ class DatabaseMigrate implements MigrateInterface
                 }
             }
 
-            $schemaFailedTables = $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            $schemaFailedTables = $this->migrateSchema($config, $schemaName);
             array_push($failedTables, ...$schemaFailedTables);
         }
 
@@ -144,8 +144,9 @@ class DatabaseMigrate implements MigrateInterface
     /**
      * @return string[] List of table IDs that failed migration
      */
-    private function migrateSchema(array $tablesWhiteList, string $schemaName): array
+    private function migrateSchema(Config $config, string $schemaName): array
     {
+        $tablesWhiteList = $config->getMigrateTables();
         $this->logger->info(sprintf('Migrating schema %s', $schemaName));
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
@@ -173,6 +174,8 @@ class DatabaseMigrate implements MigrateInterface
                     $this->logger->info(sprintf('Creating table "%s".', $tableId));
                     $this->storageModifier->createTable(
                         $this->sourceSapiClient->getTable($tableId),
+                        $config->forcePrimaryKeyNotNull(),
+                        $config->forceNullable(),
                     );
                 }
 
