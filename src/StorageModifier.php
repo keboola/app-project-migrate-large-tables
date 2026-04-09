@@ -203,6 +203,26 @@ class StorageModifier
         ];
     }
 
+    public function forceColumnsNullable(string $tableId): void
+    {
+        $tableInfo = $this->client->getTable($tableId);
+        if (!$tableInfo['isTyped']) {
+            return;
+        }
+
+        foreach ($tableInfo['definition']['columns'] as $columnDef) {
+            if ((bool) $columnDef['definition']['nullable'] === true) {
+                continue;
+            }
+
+            $this->client->updateTableColumnDefinition(
+                $tableId,
+                $columnDef['name'],
+                ['nullable' => true],
+            );
+        }
+    }
+
     private function getDestinationBucketBackend(string $bucketId): string
     {
         if (!array_key_exists($bucketId, $this->bucketBackendCache)) {

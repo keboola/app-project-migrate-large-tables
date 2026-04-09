@@ -95,6 +95,12 @@ class SapiMigrate implements MigrateInterface
                             $config->forceNullable(),
                         );
                     }
+                } elseif ($config->forceNullable()) {
+                    $this->logger->info(sprintf(
+                        'Table %s already exists, forcing columns to nullable',
+                        $tableInfo['id'],
+                    ));
+                    $this->storageModifier->forceColumnsNullable($tableId);
                 }
 
                 $this->migrateTable($tableInfo, $config);

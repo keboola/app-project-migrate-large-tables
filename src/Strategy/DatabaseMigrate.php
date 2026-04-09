@@ -178,6 +178,12 @@ class DatabaseMigrate implements MigrateInterface
                         $config->forcePrimaryKeyNotNull(),
                         $config->forceNullable(),
                     );
+                } elseif ($config->forceNullable()) {
+                    $this->logger->info(sprintf(
+                        'Table "%s" already exists, forcing columns to nullable.',
+                        $tableId,
+                    ));
+                    $this->storageModifier->forceColumnsNullable($tableId);
                 }
 
                 $this->migrateTable($schemaName, $table['name']);
