@@ -158,6 +158,7 @@ class DatabaseMigrate implements MigrateInterface
         $this->targetConnection->useRole($currentRole);
 
         $failedTables = [];
+        $schemaRole = $this->targetConnection->getCurrentRole();
         foreach ($tables as $table) {
             $tableId = sprintf('%s.%s', $schemaName, $table['name']);
             if ($tablesWhiteList && !in_array($tableId, $tablesWhiteList, true)) {
@@ -187,6 +188,7 @@ class DatabaseMigrate implements MigrateInterface
                     $e->getMessage(),
                 ));
                 $failedTables[] = $tableId;
+                $this->targetConnection->useRole($schemaRole);
                 continue;
             }
         }
@@ -247,34 +249,24 @@ class DatabaseMigrate implements MigrateInterface
             return;
         }
 
-        try {
-            $this->targetConnection->query(sprintf(
-                'TRUNCATE TABLE %s.%s.%s;',
-                QueryBuilder::quoteIdentifier($this->targetDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
-                QueryBuilder::quoteIdentifier($tableName),
-            ));
+        $this->targetConnection->query(sprintf(
+            'TRUNCATE TABLE %s.%s.%s;',
+            QueryBuilder::quoteIdentifier($this->targetDatabase),
+            QueryBuilder::quoteIdentifier($schemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+        ));
 
-            $this->targetConnection->query(sprintf(
-                'INSERT INTO %s.%s.%s (%s) SELECT %s FROM %s.%s.%s;',
-                QueryBuilder::quoteIdentifier($this->targetDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
-                QueryBuilder::quoteIdentifier($tableName),
-                implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
-                implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
-                QueryBuilder::quoteIdentifier($this->replicaDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
-                QueryBuilder::quoteIdentifier($tableName),
-            ));
-        } catch (RuntimeException $e) {
-            $this->logger->warning(sprintf(
-                'Error while migrating table %s.%s: %s',
-                $schemaName,
-                $tableName,
-                $e->getMessage(),
-            ));
-            return;
-        }
+        $this->targetConnection->query(sprintf(
+            'INSERT INTO %s.%s.%s (%s) SELECT %s FROM %s.%s.%s;',
+            QueryBuilder::quoteIdentifier($this->targetDatabase),
+            QueryBuilder::quoteIdentifier($schemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+            implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
+            implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
+            QueryBuilder::quoteIdentifier($this->replicaDatabase),
+            QueryBuilder::quoteIdentifier($schemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+        ));
     }
 
     private function getSourceRole(Connection $connection, string $showGrantsOn, string $targetSourceName): string

@@ -58,6 +58,7 @@ class SapiMigrate implements MigrateInterface
                     $tableId,
                     $e->getMessage(),
                 ));
+                $failedTables[] = $tableId;
                 continue;
             }
             if ($tableInfo['bucket']['stage'] === 'sys') {
@@ -77,9 +78,9 @@ class SapiMigrate implements MigrateInterface
                         $this->logger->info(sprintf('[dry-run] Creating bucket %s', $tableInfo['bucket']['id']));
                     } else {
                         $this->logger->info(sprintf('Creating bucket %s', $tableInfo['bucket']['id']));
-                        $this->bucketsExist[] = $tableInfo['bucket']['id'];
 
                         $this->storageModifier->createBucket($tableInfo['bucket']['id']);
+                        $this->bucketsExist[] = $tableInfo['bucket']['id'];
                     }
                 }
 
