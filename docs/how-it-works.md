@@ -4,7 +4,7 @@
 
 ```
 Component::run()
-  ├─ config.getDataMode() === 'database'  → DatabaseMigrate::migrate()
+  ├─ config.getMode() === 'database'      → DatabaseMigrate::migrate()
   └─ otherwise                            → SapiMigrate::migrate()
 ```
 
@@ -32,7 +32,7 @@ foreach tables (from configuration or getAllTables()):
 
 ### getAllTables() – table selection
 
-If no whitelist (`migrateTables`) is defined, iterates through all source project buckets:
+If no whitelist (`tables`) is defined, iterates through all source project buckets:
 - Compares tables in source and destination projects
 - Skips tables that already exist in destination and have `rowsCount > 0`
 - Result is prepended to the array (newest bucket first)
@@ -181,7 +181,7 @@ skips schemas:
   - INFORMATION_SCHEMA
   - PUBLIC
   - READER_* (reader schemas)
-  - WORKSPACE_* (unless in includedWorkspaceSchemas)
+  - WORKSPACE_* (unless in includeWorkspaceSchemas)
 
 forEach schema:
   if bucket does not exist in SAPI: createBucket()
@@ -217,11 +217,11 @@ INSERT INTO <targetDb>.<schema>.<table> (<cols>)
 | `INFORMATION_SCHEMA` | Snowflake system schema |
 | `PUBLIC` | Default empty schema |
 | `READER_*` | Reader schemas for data sharing (Data Sharing) |
-| `WORKSPACE_*` and `<number>_WORKSPACE*` | Workspaces (regex `^(\d+_)?WORKSPACE`) – included only if explicitly in `includedWorkspaceSchemas` |
+| `WORKSPACE_*` and `<number>_WORKSPACE*` | Workspaces (regex `^(\d+_)?WORKSPACE`) – included only if explicitly in `includeWorkspaceSchemas` |
 
 ### Predefined stack mappings
 
-For standard Keboola stacks, the source Snowflake account and region are predefined in `Config.php` (constant `STACK_URL_TO_SNOWFLAKE_DATABASE`). For other stacks or BYODB, set manually:
+For standard Keboola stacks, the source Snowflake account and region are predefined in `Config.php` (constants `Config::STACK_DATABASES` and `Config::BYODB_DATABASES`). For other stacks or BYODB, set manually:
 
 ```
 isSourceByodb: true

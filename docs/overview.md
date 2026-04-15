@@ -61,7 +61,8 @@ Component.php
 |---|---|
 | `src/Component.php` | Entry point, mode routing |
 | `src/Config.php` | Configuration getters + predefined stack-to-Snowflake-DB mappings |
-| `src/ConfigDefinition.php` | Parameter validation |
+| `src/Configuration/ConfigDefinition.php` | Main parameter validation |
+| `src/Configuration/CreateReplicationsConfigDefinition.php` | Validation for the `createReplications` sync action |
 | `src/Strategy/SapiMigrate.php` | SAPI transfer logic |
 | `src/Strategy/SapiMigrate/MigrateGcsLargeTable.php` | Parallel worker migration of large GCS tables |
 | `src/Strategy/DatabaseMigrate.php` | Snowflake replication logic |

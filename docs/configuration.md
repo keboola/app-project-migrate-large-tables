@@ -29,7 +29,7 @@
 
 ## Database mode – specific parameters
 
-Required if `mode: database`. Forbidden if `mode: sapi`.
+Required if `mode: database`. Ignored if `mode: sapi`.
 
 ### Snowflake credentials
 
