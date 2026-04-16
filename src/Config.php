@@ -229,6 +229,11 @@ class Config extends BaseConfig
         return (bool) $this->getValue(['parameters', 'preserveTimestamp']);
     }
 
+    public function isIncremental(): bool
+    {
+        return (bool) $this->getValue(['parameters', 'incremental']);
+    }
+
     public function shouldCreateReplicaDatabase(): bool
     {
         return (bool) $this->getValue(['parameters', 'replica', 'create'], true);

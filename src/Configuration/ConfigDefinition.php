@@ -25,6 +25,7 @@ class ConfigDefinition extends BaseConfigDefinition
                 ->scalarNode('#sourceKbcToken')->isRequired()->cannotBeEmpty()->end()
                 ->arrayNode('includeWorkspaceSchemas')->prototype('scalar')->end()->end()
                 ->booleanNode('preserveTimestamp')->defaultFalse()->end()
+                ->booleanNode('incremental')->defaultFalse()->end()
                 ->arrayNode('tables')->prototype('scalar')->end()->end()
                 ->booleanNode('migrateData')->defaultTrue()->end()
                 ->booleanNode('forcePrimaryKeyNotNull')->defaultFalse()->end()

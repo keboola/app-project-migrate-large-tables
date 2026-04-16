@@ -47,7 +47,8 @@ class SapiMigrate implements MigrateInterface
 
     public function migrate(Config $config): void
     {
-        foreach ($config->getMigrateTables() ?: $this->getAllTables() as $tableId) {
+        $tableIds = $config->getMigrateTables() ?: $this->getAllTables($config->isIncremental());
+        foreach ($tableIds as $tableId) {
             try {
                 $tableInfo = $this->sourceClient->getTable($tableId);
             } catch (ClientException $e) {
@@ -100,10 +101,20 @@ class SapiMigrate implements MigrateInterface
             return;
         }
 
-        $this->logger->info(sprintf('Exporting table %s', $sourceTableInfo['id']));
+        $changedSince = $this->resolveChangedSince($sourceTableInfo, $config);
+        if ($changedSince !== null) {
+            $this->logger->info(sprintf(
+                'Incremental export of table %s (changedSince: %s)',
+                $sourceTableInfo['id'],
+                $changedSince,
+            ));
+        } else {
+            $this->logger->info(sprintf('Exporting table %s', $sourceTableInfo['id']));
+        }
+
         $file = $this->sourceClient->exportTableAsync(
             $sourceTableInfo['id'],
-            $this->buildExportOptions($sourceTableInfo, $config),
+            $this->buildExportOptions($sourceTableInfo, $config, $changedSince),
         );
 
         $sourceFileId = $file['file']['id'];
@@ -117,6 +128,9 @@ class SapiMigrate implements MigrateInterface
                 $sourceFileId,
                 $sourceTableInfo,
                 $config->preserveTimestamp(),
+                null,
+                null,
+                $config->isIncremental(),
             );
             return;
         }
@@ -146,25 +160,62 @@ class SapiMigrate implements MigrateInterface
         }
 
         // Upload data to table
+        $writeOptions = [
+            'name' => $sourceTableInfo['name'],
+            'dataFileId' => $destinationFileId,
+            'columns' => $sourceTableInfo['columns'],
+            'useTimestampFromDataFile' => $config->preserveTimestamp(),
+        ];
+        if ($config->isIncremental()) {
+            $writeOptions['incremental'] = true;
+        }
         $this->targetClient->writeTableAsyncDirect(
             $sourceTableInfo['id'],
-            [
-                'name' => $sourceTableInfo['name'],
-                'dataFileId' => $destinationFileId,
-                'columns' => $sourceTableInfo['columns'],
-                'useTimestampFromDataFile' => $config->preserveTimestamp(),
-            ],
+            $writeOptions,
         );
 
         $tmp->remove();
     }
 
-    private function getAllTables(): array
+    /**
+     * For incremental migration, resolve the changedSince parameter
+     * based on the target table's lastImportDate.
+     */
+    private function resolveChangedSince(array $sourceTableInfo, Config $config): ?string
+    {
+        if (!$config->isIncremental()) {
+            return null;
+        }
+
+        if (!$this->targetClient->tableExists($sourceTableInfo['id'])) {
+            return null;
+        }
+
+        $targetTableInfo = $this->targetClient->getTable($sourceTableInfo['id']);
+        $lastImportDate = $targetTableInfo['lastImportDate'] ?? null;
+        if ($lastImportDate === null) {
+            return null;
+        }
+
+        return $lastImportDate;
+    }
+
+    private function getAllTables(bool $incremental = false): array
     {
         $buckets = $this->sourceClient->listBuckets();
         $listTables = [];
         foreach ($buckets as $bucket) {
             $sourceBucketTables = $this->sourceClient->listTables($bucket['id']);
+
+            if ($incremental) {
+                // In incremental mode, include all source tables (even if target already has rows)
+                array_unshift(
+                    $listTables,
+                    ...array_map(fn($v) => $v['id'], $sourceBucketTables),
+                );
+                continue;
+            }
+
             if (!$this->targetClient->bucketExists($bucket['id'])) {
                 $targetBucketTables = [];
             } else {
@@ -191,12 +242,16 @@ class SapiMigrate implements MigrateInterface
     }
 
     /** @param array<string, mixed> $sourceTableInfo */
-    private function buildExportOptions(array $sourceTableInfo, Config $config): array
+    private function buildExportOptions(array $sourceTableInfo, Config $config, ?string $changedSince = null): array
     {
         $options = [
             'gzip' => true,
             'includeInternalTimestamp' => $config->preserveTimestamp(),
         ];
+
+        if ($changedSince !== null) {
+            $options['changedSince'] = $changedSince;
+        }
 
         $sourceBucket = $sourceTableInfo['bucket'];
         if (!is_array($sourceBucket)) {
