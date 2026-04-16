@@ -192,6 +192,9 @@ class SapiMigrate implements MigrateInterface
         }
 
         $targetTableInfo = $this->targetClient->getTable($sourceTableInfo['id']);
+        if (($targetTableInfo['rowsCount'] ?? 0) === 0) {
+            return null;
+        }
         $lastImportDate = $targetTableInfo['lastImportDate'] ?? null;
         if ($lastImportDate === null) {
             return null;
