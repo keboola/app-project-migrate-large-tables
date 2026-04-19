@@ -179,7 +179,7 @@ class SapiMigrate implements MigrateInterface
 
     /**
      * For incremental migration, resolve the changedSince parameter
-     * based on the target table's lastImportDate.
+     * based on the max _timestamp value in the target table.
      */
     private function resolveChangedSince(array $sourceTableInfo, Config $config): ?string
     {
@@ -195,12 +195,51 @@ class SapiMigrate implements MigrateInterface
         if (($targetTableInfo['rowsCount'] ?? 0) === 0) {
             return null;
         }
-        $lastImportDate = $targetTableInfo['lastImportDate'] ?? null;
-        if ($lastImportDate === null) {
+
+        return $this->getMaxTimestamp($sourceTableInfo['id']);
+    }
+
+    /**
+     * Get the max _timestamp value from a target table by exporting
+     * a single row ordered by _timestamp descending.
+     */
+    private function getMaxTimestamp(string $tableId): ?string
+    {
+        $file = $this->targetClient->exportTableAsync($tableId, [
+            'columns' => ['_timestamp'],
+            'orderBy' => [
+                [
+                    'column' => '_timestamp',
+                    'order' => 'DESC',
+                ],
+            ],
+            'limit' => 1,
+        ]);
+
+        $sourceFileId = $file['file']['id'];
+        $tmp = new Temp();
+        $fileName = $tmp->getTmpFolder() . '/max_timestamp.csv';
+        $this->targetClient->downloadFile($sourceFileId, $fileName);
+
+        $content = file_get_contents($fileName);
+        $tmp->remove();
+
+        if ($content === false) {
             return null;
         }
 
-        return $lastImportDate;
+        $lines = array_filter(explode("\n", trim($content)));
+        // First line is header (_timestamp), second line is the value
+        if (count($lines) < 2) {
+            return null;
+        }
+
+        $maxTimestamp = trim($lines[1], '"');
+        if ($maxTimestamp === '') {
+            return null;
+        }
+
+        return $maxTimestamp;
     }
 
     private function getAllTables(bool $incremental = false): array
