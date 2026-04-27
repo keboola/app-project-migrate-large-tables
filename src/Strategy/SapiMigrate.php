@@ -202,11 +202,13 @@ class SapiMigrate implements MigrateInterface
     /**
      * Get the max _timestamp value from a target table by exporting
      * a single row ordered by _timestamp descending.
+     *
+     * Uses includeInternalTimestamp instead of columns filter because
+     * _timestamp is a system column not available in typed table column definitions.
      */
     private function getMaxTimestamp(string $tableId): ?string
     {
         $file = $this->targetClient->exportTableAsync($tableId, [
-            'columns' => ['_timestamp'],
             'orderBy' => [
                 [
                     'column' => '_timestamp',
@@ -214,6 +216,7 @@ class SapiMigrate implements MigrateInterface
                 ],
             ],
             'limit' => 1,
+            'includeInternalTimestamp' => true,
         ]);
 
         $sourceFileId = $file['file']['id'];
@@ -229,17 +232,27 @@ class SapiMigrate implements MigrateInterface
         }
 
         $lines = array_filter(explode("\n", trim($content)));
-        // First line is header (_timestamp), second line is the value
+        // First line is header, second line is data — _timestamp is the last column
         if (count($lines) < 2) {
             return null;
         }
 
-        $maxTimestamp = trim($lines[1], '"');
-        if ($maxTimestamp === '') {
+        $header = str_getcsv($lines[1]);
+        $headerColumns = str_getcsv($lines[0]);
+        $timestampIndex = array_search('"_timestamp"', $headerColumns);
+        if ($timestampIndex === false) {
+            $timestampIndex = array_search('_timestamp', $headerColumns);
+        }
+        if ($timestampIndex === false) {
             return null;
         }
 
-        return $maxTimestamp;
+        $maxTimestamp = $header[$timestampIndex] ?? null;
+        if ($maxTimestamp === null || $maxTimestamp === '') {
+            return null;
+        }
+
+        return trim($maxTimestamp, '"');
     }
 
     private function getAllTables(bool $incremental = false): array
