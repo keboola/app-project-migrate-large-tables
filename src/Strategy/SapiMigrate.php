@@ -11,6 +11,7 @@ use Keboola\AppProjectMigrateLargeTables\StorageModifier;
 use Keboola\AppProjectMigrateLargeTables\Strategy\SapiMigrate\MigrateGcsLargeTable;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\ClientException;
+use Keboola\StorageApi\DevBranches;
 use Keboola\StorageApi\Options\FileUploadOptions;
 use Keboola\StorageApi\Workspaces;
 use Keboola\Temp\Temp;
@@ -31,6 +32,7 @@ class SapiMigrate implements MigrateInterface
     private array $destinationBackendCache = [];
 
     private ?int $workspaceId = null;
+    private ?int $defaultBranchId = null;
 
     public function __construct(
         private readonly Client $sourceClient,
@@ -257,8 +259,9 @@ class SapiMigrate implements MigrateInterface
         ]);
 
         // Submit query job
+        $branchId = $this->getDefaultBranchId();
         $submitResponse = $httpClient->post(
-            sprintf('api/v1/branches/default/workspaces/%d/queries', $workspaceId),
+            sprintf('api/v1/branches/%d/workspaces/%d/queries', $branchId, $workspaceId),
             [
                 'json' => [
                     'statements' => [$sql],
@@ -332,6 +335,19 @@ class SapiMigrate implements MigrateInterface
         $this->workspaceId = (int) $workspace['id'];
 
         return $this->workspaceId;
+    }
+
+    private function getDefaultBranchId(): int
+    {
+        if ($this->defaultBranchId !== null) {
+            return $this->defaultBranchId;
+        }
+
+        $devBranches = new DevBranches($this->targetClient);
+        $defaultBranch = $devBranches->getDefaultBranch();
+        $this->defaultBranchId = (int) $defaultBranch['id'];
+
+        return $this->defaultBranchId;
     }
 
     private function cleanupWorkspace(): void
