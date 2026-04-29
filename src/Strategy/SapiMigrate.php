@@ -225,6 +225,11 @@ class SapiMigrate implements MigrateInterface
         $tableName = array_pop($parts);
         $schemaName = implode('.', $parts);
 
+        // BigQuery dataset names: dots and hyphens replaced with underscores
+        if ($this->workspaceBackend === 'bigquery') {
+            $schemaName = str_replace(['.', '-'], '_', $schemaName);
+        }
+
         $sql = sprintf(
             'SELECT MAX(%s) FROM %s.%s',
             $this->quoteIdentifier('_timestamp'),
