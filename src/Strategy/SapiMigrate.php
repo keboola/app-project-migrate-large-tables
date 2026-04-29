@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\AppProjectMigrateLargeTables\Strategy;
 
+use GuzzleHttp\Client as GuzzleClient;
 use Keboola\AppProjectMigrateLargeTables\Config;
 use Keboola\AppProjectMigrateLargeTables\MigrateInterface;
 use Keboola\AppProjectMigrateLargeTables\StorageModifier;
@@ -14,6 +15,7 @@ use Keboola\StorageApi\Options\FileUploadOptions;
 use Keboola\StorageApi\Workspaces;
 use Keboola\Temp\Temp;
 use Psr\Log\LoggerInterface;
+use RuntimeException;
 use Throwable;
 
 class SapiMigrate implements MigrateInterface
@@ -208,7 +210,7 @@ class SapiMigrate implements MigrateInterface
     }
 
     /**
-     * Get the max _timestamp value from a target table using a workspace query.
+     * Get the max _timestamp value from a target table using the Query Service API.
      * Creates a read-only workspace lazily and reuses it across tables.
      */
     private function getMaxTimestamp(string $tableId): ?string
@@ -220,19 +222,100 @@ class SapiMigrate implements MigrateInterface
         $tableName = array_pop($parts);
         $schemaName = implode('.', $parts);
 
-        $workspaces = new Workspaces($this->targetClient);
-        $result = $workspaces->executeQuery($workspaceId, sprintf(
+        $sql = sprintf(
             'SELECT MAX("_timestamp") AS "maxTimestamp" FROM %s.%s',
             $this->quoteIdentifier($schemaName),
             $this->quoteIdentifier($tableName),
-        ));
+        );
 
-        $maxTimestamp = $result[0]['maxTimestamp'] ?? null;
+        $result = $this->executeQueryViaQueryService($workspaceId, $sql);
+
+        // Result format: {"columns": [...], "data": [["value"]], ...}
+        $maxTimestamp = $result['data'][0][0] ?? null;
         if ($maxTimestamp === null || $maxTimestamp === '') {
             return null;
         }
 
         return $maxTimestamp;
+    }
+
+    /**
+     * Execute a SQL query via the Keboola Query Service API.
+     * Submits a query job, polls for completion, and returns results.
+     */
+    private function executeQueryViaQueryService(int $workspaceId, string $sql): array
+    {
+        $queryServiceUrl = $this->targetClient->getServiceUrl('query');
+        $token = $this->targetClient->token;
+
+        $httpClient = new GuzzleClient([
+            'base_uri' => rtrim($queryServiceUrl, '/') . '/',
+            'headers' => [
+                'X-StorageApi-Token' => $token,
+                'Content-Type' => 'application/json',
+            ],
+        ]);
+
+        // Submit query job
+        $submitResponse = $httpClient->post(
+            sprintf('api/v1/branches/default/workspaces/%d/queries', $workspaceId),
+            [
+                'json' => [
+                    'statements' => [$sql],
+                    'transactional' => false,
+                ],
+            ],
+        );
+
+        /** @var array{queryJobId?: string} $submitResult */
+        $submitResult = json_decode((string) $submitResponse->getBody(), true);
+        $queryJobId = $submitResult['queryJobId'] ?? null;
+        if ($queryJobId === null) {
+            throw new RuntimeException('Query Service did not return a queryJobId');
+        }
+
+        // Poll for job completion
+        $maxAttempts = 60;
+        $statementId = null;
+        for ($i = 0; $i < $maxAttempts; $i++) {
+            usleep(500000); // 500ms
+
+            $statusResponse = $httpClient->get(sprintf('api/v1/queries/%s', $queryJobId));
+            /** @var array{status?: string, statements?: list<array{id?: string, error?: string}>} $statusResult */
+            $statusResult = json_decode((string) $statusResponse->getBody(), true);
+            $status = (string) ($statusResult['status'] ?? 'unknown');
+
+            if ($status === 'completed') {
+                $statementId = (string) ($statusResult['statements'][0]['id'] ?? '');
+                break;
+            }
+
+            if ($status === 'failed' || $status === 'canceled') {
+                $error = (string) ($statusResult['statements'][0]['error'] ?? 'Unknown error');
+                throw new RuntimeException(sprintf(
+                    'Query Service job %s %s: %s',
+                    $queryJobId,
+                    $status,
+                    $error,
+                ));
+            }
+        }
+
+        if ($statementId === null || $statementId === '') {
+            throw new RuntimeException(sprintf('Query Service job %s did not complete in time', $queryJobId));
+        }
+
+        // Get results
+        $resultResponse = $httpClient->get(
+            sprintf('api/v1/queries/%s/%s/results', $queryJobId, $statementId),
+        );
+
+        $resultData = json_decode((string) $resultResponse->getBody(), true);
+        if (!is_array($resultData)) {
+            throw new RuntimeException('Query Service returned invalid results');
+        }
+
+        return $resultData;
     }
 
     private function getOrCreateWorkspace(): int
