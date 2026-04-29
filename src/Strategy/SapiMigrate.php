@@ -196,7 +196,21 @@ class SapiMigrate implements MigrateInterface
             return null;
         }
 
-        return $this->getMaxTimestamp($sourceTableInfo['id']);
+        try {
+            $maxTimestamp = $this->getMaxTimestamp($sourceTableInfo['id']);
+            if ($maxTimestamp !== null) {
+                return $maxTimestamp;
+            }
+        } catch (ClientException $e) {
+            $this->logger->warning(sprintf(
+                'Could not export max _timestamp from %s (%s), falling back to lastImportDate',
+                $sourceTableInfo['id'],
+                $e->getMessage(),
+            ));
+        }
+
+        // Fallback: use lastImportDate when _timestamp export is not possible (e.g. typed tables)
+        return $targetTableInfo['lastImportDate'] ?? null;
     }
 
     /**
