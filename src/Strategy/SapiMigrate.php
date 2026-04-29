@@ -11,8 +11,10 @@ use Keboola\AppProjectMigrateLargeTables\Strategy\SapiMigrate\MigrateGcsLargeTab
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\ClientException;
 use Keboola\StorageApi\Options\FileUploadOptions;
+use Keboola\StorageApi\Workspaces;
 use Keboola\Temp\Temp;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 class SapiMigrate implements MigrateInterface
 {
@@ -25,6 +27,8 @@ class SapiMigrate implements MigrateInterface
 
     /** @var array<string, string> $destinationBackendCache */
     private array $destinationBackendCache = [];
+
+    private ?int $workspaceId = null;
 
     public function __construct(
         private readonly Client $sourceClient,
@@ -48,49 +52,53 @@ class SapiMigrate implements MigrateInterface
     public function migrate(Config $config): void
     {
         $tableIds = $config->getMigrateTables() ?: $this->getAllTables($config->isIncremental());
-        foreach ($tableIds as $tableId) {
-            try {
-                $tableInfo = $this->sourceClient->getTable($tableId);
-            } catch (ClientException $e) {
-                $this->logger->warning(sprintf(
-                    'Skipping migration Table ID "%s". Reason: "%s".',
-                    $tableId,
-                    $e->getMessage(),
-                ));
-                continue;
-            }
-            if ($tableInfo['bucket']['stage'] === 'sys') {
-                $this->logger->warning(sprintf('Skipping table %s (sys bucket)', $tableInfo['id']));
-                continue;
-            }
-
-            if ($tableInfo['isAlias']) {
-                $this->logger->warning(sprintf('Skipping table %s (alias)', $tableInfo['id']));
-                continue;
-            }
-
-            if (!in_array($tableInfo['bucket']['id'], $this->bucketsExist) &&
-                !$this->targetClient->bucketExists($tableInfo['bucket']['id'])) {
-                if ($this->dryRun) {
-                    $this->logger->info(sprintf('[dry-run] Creating bucket %s', $tableInfo['bucket']['id']));
-                } else {
-                    $this->logger->info(sprintf('Creating bucket %s', $tableInfo['bucket']['id']));
-                    $this->bucketsExist[] = $tableInfo['bucket']['id'];
-
-                    $this->storageModifier->createBucket($tableInfo['bucket']['id']);
+        try {
+            foreach ($tableIds as $tableId) {
+                try {
+                    $tableInfo = $this->sourceClient->getTable($tableId);
+                } catch (ClientException $e) {
+                    $this->logger->warning(sprintf(
+                        'Skipping migration Table ID "%s". Reason: "%s".',
+                        $tableId,
+                        $e->getMessage(),
+                    ));
+                    continue;
                 }
-            }
-
-            if (!$this->targetClient->tableExists($tableId)) {
-                if ($this->dryRun) {
-                    $this->logger->info(sprintf('[dry-run] Creating table %s', $tableInfo['id']));
-                } else {
-                    $this->logger->info(sprintf('Creating table %s', $tableInfo['id']));
-                    $this->storageModifier->createTable($tableInfo, $config->forcePrimaryKeyNotNull());
+                if ($tableInfo['bucket']['stage'] === 'sys') {
+                    $this->logger->warning(sprintf('Skipping table %s (sys bucket)', $tableInfo['id']));
+                    continue;
                 }
-            }
 
-            $this->migrateTable($tableInfo, $config);
+                if ($tableInfo['isAlias']) {
+                    $this->logger->warning(sprintf('Skipping table %s (alias)', $tableInfo['id']));
+                    continue;
+                }
+
+                if (!in_array($tableInfo['bucket']['id'], $this->bucketsExist) &&
+                    !$this->targetClient->bucketExists($tableInfo['bucket']['id'])) {
+                    if ($this->dryRun) {
+                        $this->logger->info(sprintf('[dry-run] Creating bucket %s', $tableInfo['bucket']['id']));
+                    } else {
+                        $this->logger->info(sprintf('Creating bucket %s', $tableInfo['bucket']['id']));
+                        $this->bucketsExist[] = $tableInfo['bucket']['id'];
+
+                        $this->storageModifier->createBucket($tableInfo['bucket']['id']);
+                    }
+                }
+
+                if (!$this->targetClient->tableExists($tableId)) {
+                    if ($this->dryRun) {
+                        $this->logger->info(sprintf('[dry-run] Creating table %s', $tableInfo['id']));
+                    } else {
+                        $this->logger->info(sprintf('Creating table %s', $tableInfo['id']));
+                        $this->storageModifier->createTable($tableInfo, $config->forcePrimaryKeyNotNull());
+                    }
+                }
+
+                $this->migrateTable($tableInfo, $config);
+            }
+        } finally {
+            $this->cleanupWorkspace();
         }
     }
 
@@ -197,76 +205,83 @@ class SapiMigrate implements MigrateInterface
         }
 
         try {
-            $maxTimestamp = $this->getMaxTimestamp($sourceTableInfo['id']);
-            if ($maxTimestamp !== null) {
-                return $maxTimestamp;
-            }
-        } catch (ClientException $e) {
+            return $this->getMaxTimestamp($sourceTableInfo['id']);
+        } catch (Throwable $e) {
             $this->logger->warning(sprintf(
-                'Could not export max _timestamp from %s (%s), falling back to lastImportDate',
+                'Could not query max _timestamp from %s (%s), falling back to lastImportDate',
                 $sourceTableInfo['id'],
                 $e->getMessage(),
             ));
         }
 
-        // Fallback: use lastImportDate when _timestamp export is not possible (e.g. typed tables)
+        // Fallback: use lastImportDate when workspace query is not possible
         return $targetTableInfo['lastImportDate'] ?? null;
     }
 
     /**
-     * Get the max _timestamp value from a target table by exporting
-     * a single row ordered by _timestamp descending.
-     *
-     * Uses includeInternalTimestamp instead of columns filter because
-     * _timestamp is a system column not available in typed table column definitions.
+     * Get the max _timestamp value from a target table using a workspace query.
+     * Creates a read-only workspace lazily and reuses it across tables.
      */
     private function getMaxTimestamp(string $tableId): ?string
     {
-        $file = $this->targetClient->exportTableAsync($tableId, [
-            'orderBy' => [
-                [
-                    'column' => '_timestamp',
-                    'order' => 'DESC',
-                ],
-            ],
-            'limit' => 1,
-            'includeInternalTimestamp' => true,
-        ]);
+        $workspaceId = $this->getOrCreateWorkspace();
 
-        $sourceFileId = $file['file']['id'];
-        $tmp = new Temp();
-        $fileName = $tmp->getTmpFolder() . '/max_timestamp.csv';
-        $this->targetClient->downloadFile($sourceFileId, $fileName);
+        // Table ID format: "stage.c-bucket.tableName" -> schema "stage.c-bucket", table "tableName"
+        $parts = explode('.', $tableId);
+        $tableName = array_pop($parts);
+        $schemaName = implode('.', $parts);
 
-        $content = file_get_contents($fileName);
-        $tmp->remove();
+        $workspaces = new Workspaces($this->targetClient);
+        $result = $workspaces->executeQuery($workspaceId, sprintf(
+            'SELECT MAX("_timestamp") AS "maxTimestamp" FROM %s.%s',
+            $this->quoteIdentifier($schemaName),
+            $this->quoteIdentifier($tableName),
+        ));
 
-        if ($content === false) {
-            return null;
-        }
-
-        $lines = array_filter(explode("\n", trim($content)));
-        // First line is header, second line is data — _timestamp is the last column
-        if (count($lines) < 2) {
-            return null;
-        }
-
-        $header = str_getcsv($lines[1]);
-        $headerColumns = str_getcsv($lines[0]);
-        $timestampIndex = array_search('"_timestamp"', $headerColumns);
-        if ($timestampIndex === false) {
-            $timestampIndex = array_search('_timestamp', $headerColumns);
-        }
-        if ($timestampIndex === false) {
-            return null;
-        }
-
-        $maxTimestamp = $header[$timestampIndex] ?? null;
+        $maxTimestamp = $result[0]['maxTimestamp'] ?? null;
         if ($maxTimestamp === null || $maxTimestamp === '') {
             return null;
         }
 
-        return trim($maxTimestamp, '"');
+        return $maxTimestamp;
+    }
+
+    private function getOrCreateWorkspace(): int
+    {
+        if ($this->workspaceId !== null) {
+            return $this->workspaceId;
+        }
+
+        $this->logger->info('Creating read-only workspace for _timestamp queries');
+        $workspaces = new Workspaces($this->targetClient);
+        $workspace = $workspaces->createWorkspace([
+            'readOnlyStorageAccess' => true,
+        ]);
+        $this->workspaceId = (int) $workspace['id'];
+
+        return $this->workspaceId;
+    }
+
+    private function cleanupWorkspace(): void
+    {
+        if ($this->workspaceId === null) {
+            return;
+        }
+
+        try {
+            $this->logger->info('Cleaning up read-only workspace');
+            $workspaces = new Workspaces($this->targetClient);
+            $workspaces->deleteWorkspace($this->workspaceId);
+        } catch (Throwable $e) {
+            $this->logger->warning(sprintf('Failed to delete workspace: %s', $e->getMessage()));
+        } finally {
+            $this->workspaceId = null;
+        }
+    }
+
+    private function quoteIdentifier(string $identifier): string
+    {
+        return '"' . str_replace('"', '""', $identifier) . '"';
     }
 
     private function getAllTables(bool $incremental = false): array
