@@ -32,6 +32,7 @@ class SapiMigrate implements MigrateInterface
     private array $destinationBackendCache = [];
 
     private ?int $workspaceId = null;
+    private ?string $workspaceBackend = null;
     private ?int $defaultBranchId = null;
 
     public function __construct(
@@ -225,7 +226,8 @@ class SapiMigrate implements MigrateInterface
         $schemaName = implode('.', $parts);
 
         $sql = sprintf(
-            'SELECT MAX("_timestamp") AS "maxTimestamp" FROM %s.%s',
+            'SELECT MAX(%s) FROM %s.%s',
+            $this->quoteIdentifier('_timestamp'),
             $this->quoteIdentifier($schemaName),
             $this->quoteIdentifier($tableName),
         );
@@ -333,6 +335,7 @@ class SapiMigrate implements MigrateInterface
             'readOnlyStorageAccess' => true,
         ]);
         $this->workspaceId = (int) $workspace['id'];
+        $this->workspaceBackend = (string) ($workspace['connection']['backend'] ?? 'snowflake');
 
         return $this->workspaceId;
     }
@@ -369,6 +372,9 @@ class SapiMigrate implements MigrateInterface
 
     private function quoteIdentifier(string $identifier): string
     {
+        if ($this->workspaceBackend === 'bigquery') {
+            return '`' . str_replace('`', '\`', $identifier) . '`';
+        }
         return '"' . str_replace('"', '""', $identifier) . '"';
     }
 
