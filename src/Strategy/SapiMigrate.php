@@ -191,13 +191,19 @@ class SapiMigrate implements MigrateInterface
     }
 
     /**
-     * For incremental migration, resolve the changedSince parameter
-     * based on the max _timestamp value in the target table.
+     * For incremental migration, resolve the changedSince parameter.
+     * If the user provided an explicit changedSince value, use that.
+     * Otherwise, query the max _timestamp from the target table.
      */
     private function resolveChangedSince(array $sourceTableInfo, Config $config): ?string
     {
         if (!$config->isIncremental()) {
             return null;
+        }
+
+        $userChangedSince = $config->getChangedSince();
+        if ($userChangedSince !== null) {
+            return $userChangedSince;
         }
 
         if (!$this->targetClient->tableExists($sourceTableInfo['id'])) {

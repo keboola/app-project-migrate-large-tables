@@ -234,6 +234,13 @@ class Config extends BaseConfig
         return (bool) $this->getValue(['parameters', 'incremental']);
     }
 
+    public function getChangedSince(): ?string
+    {
+        /** @var string|null $value */
+        $value = $this->getValue(['parameters', 'changedSince']);
+        return $value !== null ? $value : null;
+    }
+
     public function shouldCreateReplicaDatabase(): bool
     {
         return (bool) $this->getValue(['parameters', 'replica', 'create'], true);
