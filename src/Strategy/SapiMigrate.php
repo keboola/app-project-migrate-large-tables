@@ -215,7 +215,16 @@ class SapiMigrate implements MigrateInterface
             return null;
         }
 
-        return $this->getMaxTimestamp($sourceTableInfo['id']);
+        try {
+            return $this->getMaxTimestamp($sourceTableInfo['id']);
+        } catch (ClientException $e) {
+            $this->logger->warning(sprintf(
+                'Cannot resolve changedSince for table %s, falling back to full export: %s',
+                $sourceTableInfo['id'],
+                $e->getMessage(),
+            ));
+            return null;
+        }
     }
 
     /**
