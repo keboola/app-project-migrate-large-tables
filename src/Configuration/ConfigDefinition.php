@@ -33,6 +33,8 @@ class ConfigDefinition extends BaseConfigDefinition
                     ->children()
                         ->integerNode('parallelChunks')->defaultValue(3)->min(1)->max(20)->end()
                         ->integerNode('chunkSize')->defaultValue(150)->min(1)->end()
+                        ->integerNode('parallelImports')->defaultValue(1)->min(1)->max(20)->end()
+                        ->integerNode('lastChunks')->defaultValue(0)->min(0)->end()
                     ->end()
                 ->end()
                 ->arrayNode('replica')

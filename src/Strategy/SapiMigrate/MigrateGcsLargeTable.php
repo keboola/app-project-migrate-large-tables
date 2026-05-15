@@ -13,6 +13,7 @@ use Keboola\StorageApi\Options\GetFileOptions;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 class MigrateGcsLargeTable
 {
@@ -23,6 +24,8 @@ class MigrateGcsLargeTable
         private readonly bool $dryRun = false,
         private readonly int $maxParallelism = 3,
         private readonly int $chunkSize = 150,
+        private readonly int $parallelImports = 1,
+        private readonly int $lastChunks = 0,
     ) {
     }
 
@@ -62,11 +65,24 @@ class MigrateGcsLargeTable
         $chunks = array_chunk((array) $manifest['entries'], max(1, $this->chunkSize));
 
         $totalChunks = count($chunks);
+        $startChunkIndex = 0;
+        if ($this->lastChunks > 0 && $this->lastChunks < $totalChunks) {
+            $startChunkIndex = $totalChunks - $this->lastChunks;
+            $this->logger->info(sprintf(
+                'lastChunks=%d set: skipping chunks 1-%d, processing only chunks %d-%d',
+                $this->lastChunks,
+                $startChunkIndex,
+                $startChunkIndex + 1,
+                $totalChunks,
+            ));
+        }
+
         $this->logger->info(sprintf(
-            'Processing table %s: %d chunks with parallelism %d',
+            'Processing table %s: %d chunks (worker parallelism %d, import parallelism %d)',
             $tableInfo['id'],
-            $totalChunks,
+            $totalChunks - $startChunkIndex,
             $this->maxParallelism,
+            $this->parallelImports,
         ));
 
         $sourceApiUrl = $this->sourceClient->getApiUrl();
@@ -89,17 +105,26 @@ class MigrateGcsLargeTable
         $runningProcesses = [];
         /** @var array<array{fileId: string, chunkNum: int}> $writeQueue */
         $writeQueue = [];
+        /** @var array<int, array{jobId: int, chunkNum: int, fileId: string}> $inFlightImports */
+        $inFlightImports = [];
         $errors = [];
-        $chunkIndex = 0;
+        $chunkIndex = $startChunkIndex;
 
         try {
-            while ($chunkIndex < $totalChunks || !empty($runningProcesses) || !empty($writeQueue)) {
-                // --- Phase 1: collect finished workers (free slots before starting new ones) ---
+            while ($chunkIndex < $totalChunks
+                || !empty($runningProcesses)
+                || !empty($writeQueue)
+                || !empty($inFlightImports)
+            ) {
+                $didSomething = false;
+
+                // --- Phase 1a: collect finished workers (free slots before starting new ones) ---
                 foreach ($runningProcesses as $key => $item) {
                     if (!$item['process']->isRunning()) {
                         unset($runningProcesses[$key]);
+                        $didSomething = true;
                         if (!$item['process']->isSuccessful()) {
-                            $errors[$key] = new RuntimeException(sprintf(
+                            $errors['worker-' . $key] = new RuntimeException(sprintf(
                                 'Chunk %d/%d worker exited with code %d: %s',
                                 $item['chunkNum'],
                                 $totalChunks,
@@ -112,7 +137,7 @@ class MigrateGcsLargeTable
                             /** @var array{logs: string[], fileId: string} $result */
                             $result = json_decode($item['process']->getOutput(), true, 512, JSON_THROW_ON_ERROR);
                         } catch (JsonException $e) {
-                            $errors[$key] = new RuntimeException(sprintf(
+                            $errors['worker-' . $key] = new RuntimeException(sprintf(
                                 'Chunk %d/%d worker returned invalid JSON: %s',
                                 $item['chunkNum'],
                                 $totalChunks,
@@ -127,7 +152,7 @@ class MigrateGcsLargeTable
                     }
                 }
 
-                // --- Phase 1: start new workers into freed slots ---
+                // --- Phase 1b: start new workers into freed slots ---
                 while ($chunkIndex < $totalChunks && count($runningProcesses) < max(1, $this->maxParallelism)) {
                     $chunkNum = $chunkIndex + 1;
                     $this->logger->info(sprintf(
@@ -151,34 +176,81 @@ class MigrateGcsLargeTable
                     $process->start();
                     $runningProcesses[$chunkIndex] = ['process' => $process, 'chunkNum' => $chunkNum];
                     $chunkIndex++;
+                    $didSomething = true;
                 }
 
-                // --- Phase 2: process first item from writeQueue (blocking) ---
-                // Phase 1 workers continue running in the OS during this blocking call.
-                if (!empty($writeQueue)) {
+                // --- Phase 2a: reap finished SAPI import jobs ---
+                foreach ($inFlightImports as $key => $item) {
+                    try {
+                        $job = $this->targetClient->getJob($item['jobId']);
+                    } catch (Throwable $e) {
+                        unset($inFlightImports[$key]);
+                        $errors['import-' . $key] = new RuntimeException(sprintf(
+                            'Chunk %d/%d: polling import job %d failed: %s',
+                            $item['chunkNum'],
+                            $totalChunks,
+                            $item['jobId'],
+                            $e->getMessage(),
+                        ), 0, $e);
+                        $didSomething = true;
+                        continue;
+                    }
+                    $status = (string) $job['status'];
+                    if (!in_array($status, ['success', 'error'], true)) {
+                        continue; // still waiting/processing
+                    }
+                    unset($inFlightImports[$key]);
+                    $didSomething = true;
+                    if ($status === 'success') {
+                        $this->logger->info(sprintf(
+                            'Finished chunk %d/%d (import job %d)',
+                            $item['chunkNum'],
+                            $totalChunks,
+                            $item['jobId'],
+                        ));
+                    } else {
+                        $errors['import-' . $key] = new RuntimeException(sprintf(
+                            'Chunk %d/%d import job %d failed: %s (fileId: %s)',
+                            $item['chunkNum'],
+                            $totalChunks,
+                            $item['jobId'],
+                            $job['error']['message'] ?? '(no error message)',
+                            $item['fileId'],
+                        ));
+                    }
+                }
+
+                // --- Phase 2b: enqueue new SAPI imports up to parallelImports ---
+                while (!empty($writeQueue) && count($inFlightImports) < max(1, $this->parallelImports)) {
                     $writeItem = array_shift($writeQueue);
                     $this->logger->info(sprintf(
-                        'Chunk %d/%d: importing into table %s (fileId: %s)',
+                        'Chunk %d/%d: starting import into table %s (fileId: %s)',
                         $writeItem['chunkNum'],
                         $totalChunks,
                         $tableInfo['id'],
                         $writeItem['fileId'],
                     ));
-                    $this->targetClient->writeTableAsyncDirect($tableInfo['id'], [
+                    $jobId = $this->targetClient->queueTableImport($tableInfo['id'], [
                         'name' => $tableInfo['name'],
                         'dataFileId' => $writeItem['fileId'],
                         'columns' => $tableInfo['columns'],
                         'useTimestampFromDataFile' => $preserveTimestamp,
                         'incremental' => true,
                     ]);
-                    $this->logger->info(sprintf('Finished chunk %d/%d', $writeItem['chunkNum'], $totalChunks));
-                    continue;
+                    $inFlightImports[$writeItem['chunkNum']] = [
+                        'jobId' => (int) $jobId,
+                        'chunkNum' => $writeItem['chunkNum'],
+                        'fileId' => $writeItem['fileId'],
+                    ];
+                    $didSomething = true;
                 }
 
-                usleep(100_000); // 100ms polling — nothing to process yet
+                if (!$didSomething) {
+                    usleep(1_000_000); // 1s — nothing to process, back off polling
+                }
             }
 
-            $this->logger->info(sprintf('All %d chunks processed', $totalChunks));
+            $this->logger->info(sprintf('All %d chunks processed', $totalChunks - $startChunkIndex));
         } finally {
             foreach ($runningProcesses as $item) {
                 $item['process']->stop(0);

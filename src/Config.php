@@ -263,4 +263,14 @@ class Config extends BaseConfig
     {
         return $this->getIntValue(['parameters', 'gcsLargeTable', 'chunkSize'], 150);
     }
+
+    public function getGcsLargeTableParallelImports(): int
+    {
+        return $this->getIntValue(['parameters', 'gcsLargeTable', 'parallelImports'], 1);
+    }
+
+    public function getGcsLargeTableLastChunks(): int
+    {
+        return $this->getIntValue(['parameters', 'gcsLargeTable', 'lastChunks'], 0);
+    }
 }

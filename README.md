@@ -42,8 +42,10 @@ The `config.json` configuration file contains the following properties:
     - `sourceKbcToken` - string (required): Storage API token of the source project
     - `tables` - array (optional): List of tables to migrate. If not set, all tables will be migrated.
     - `gcsLargeTable` - object (optional): Configuration for parallel GCS large table migration
-        - `parallelChunks` - integer (optional, default `3`, min `1`, max `20`): Number of chunks to migrate in parallel
-        - `chunkSize` - integer (optional, default `150`, min `1`): Number of slice files per chunk
+        - `parallelChunks` - integer (optional, default `3`, min `1`, max `20`): Number of download/upload worker processes running in parallel
+        - `chunkSize` - integer (optional, default `150`, min `1`): Number of slice files per chunk. Smaller values produce smaller CSV files per Storage API import, which makes it easier to isolate malformed rows when imports fail.
+        - `parallelImports` - integer (optional, default `1`, min `1`, max `20`): Number of concurrent Storage API table imports. Default `1` preserves sequential import behaviour; increase to run multiple `writeTableAsyncDirect`/`queueTableImport` jobs against the target table in parallel. Note: imports use `incremental: true`, so a partial failure can leave the target table half-loaded — drop/truncate the target table before retrying a failed migration.
+        - `lastChunks` - integer (optional, default `0`): If greater than `0`, only the last N chunks are processed (download, upload, and import). The first `(totalChunks - N)` chunks are skipped entirely. Use this for diagnostic bisection when the malformed slice is known to be in the tail of the source table. Chunk numbering in logs stays absolute (e.g. with 68 total chunks and `lastChunks=20`, logs show `Chunk 49/68` … `Chunk 68/68`). Default `0` disables the feature and processes all chunks.
     - `forcePrimaryKeyNotNull` - boolean (optional): If set to `true`, primary key columns will always be created as `NOT NULL` during typed table migration. Useful when source primary key columns are marked nullable but the target backend (e.g. BigQuery) requires primary keys to be non-nullable. Default: `false`.
     - `db` - object (optional in `database` mode; extends the `db` object in `image_parameters`):
         - `host` - string (required): Snowflake host

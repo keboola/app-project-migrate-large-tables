@@ -28,6 +28,8 @@ class ConfigTest extends TestCase
 
         self::assertSame(3, $config->getGcsLargeTableParallelChunks());
         self::assertSame(150, $config->getGcsLargeTableChunkSize());
+        self::assertSame(1, $config->getGcsLargeTableParallelImports());
+        self::assertSame(0, $config->getGcsLargeTableLastChunks());
     }
 
     public function testGcsLargeTableCustomValues(): void
@@ -38,11 +40,66 @@ class ConfigTest extends TestCase
             'gcsLargeTable' => [
                 'parallelChunks' => 5,
                 'chunkSize' => 200,
+                'parallelImports' => 4,
+                'lastChunks' => 20,
             ],
         ]);
 
         self::assertSame(5, $config->getGcsLargeTableParallelChunks());
         self::assertSame(200, $config->getGcsLargeTableChunkSize());
+        self::assertSame(4, $config->getGcsLargeTableParallelImports());
+        self::assertSame(20, $config->getGcsLargeTableLastChunks());
+    }
+
+    public function testParallelImportsMinimumIsOne(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage(
+            'The value 0 is too small for path "root.parameters.gcsLargeTable.parallelImports". ' .
+            'Should be greater than or equal to 1',
+        );
+
+        $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'gcsLargeTable' => [
+                'parallelImports' => 0,
+            ],
+        ]);
+    }
+
+    public function testParallelImportsMaximumIsTwenty(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage(
+            'The value 21 is too big for path "root.parameters.gcsLargeTable.parallelImports". ' .
+            'Should be less than or equal to 20',
+        );
+
+        $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'gcsLargeTable' => [
+                'parallelImports' => 21,
+            ],
+        ]);
+    }
+
+    public function testLastChunksMinimumIsZero(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage(
+            'The value -1 is too small for path "root.parameters.gcsLargeTable.lastChunks". ' .
+            'Should be greater than or equal to 0',
+        );
+
+        $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'gcsLargeTable' => [
+                'lastChunks' => -1,
+            ],
+        ]);
     }
 
     public function testParallelChunksMinimumIsOne(): void
