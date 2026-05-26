@@ -109,68 +109,125 @@ class DatabaseMigrate implements MigrateInterface
                 continue;
             }
 
-            if (!$this->targetSapiClient->bucketExists($schemaName)) {
+            // Workspace schemas (e.g. "WORKSPACE_1166207470") don't have a dot separator.
+            // Regular schemas (e.g. "in.c-bucket-name") have the stage prefix and work as both
+            // Snowflake schema names and SAPI bucket IDs.
+            // For workspace schemas, we need to compute separate SAPI bucket IDs.
+            $isWorkspaceSchema = !str_contains($schemaName, '.');
+
+            if ($isWorkspaceSchema) {
+                // Source project has external bucket "in.WORKSPACE_xxx"
+                $sourceSapiBucketId = 'in.' . $schemaName;
+            } else {
+                $sourceSapiBucketId = $schemaName;
+            }
+
+            // Determine target SAPI bucket ID
+            $targetSapiBucketId = null;
+            if ($isWorkspaceSchema) {
+                // Check if a bucket matching this workspace schema already exists
+                // SAPI createBucket adds "c-" prefix, so target bucket will be "in.c-WORKSPACE_xxx"
+                $targetSapiBucketId = 'in.c-' . $schemaName;
+            } else {
+                $targetSapiBucketId = $schemaName;
+            }
+
+            if (!$this->targetSapiClient->bucketExists($targetSapiBucketId)) {
                 if ($this->dryRun) {
                     $this->logger->info(sprintf('[dry-run] Creating bucket "%s".', $schemaName));
                 } else {
                     // Create bucket
                     $this->logger->info(sprintf('Creating bucket "%s".', $schemaName));
-                    $this->storageModifier->createBucket($schemaName);
+                    $targetSapiBucketId = $this->storageModifier->createBucket($schemaName);
                 }
             }
 
-            $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            // For Snowflake SQL on target, the schema name matches the SAPI bucket ID
+            $targetSchemaName = $targetSapiBucketId ?? $schemaName;
+
+            $this->migrateSchema(
+                $config->getMigrateTables(),
+                $schemaName,
+                $sourceSapiBucketId,
+                $targetSapiBucketId ?? $schemaName,
+                $targetSchemaName,
+            );
         }
     }
 
-    private function migrateSchema(array $tablesWhiteList, string $schemaName): void
-    {
-        $this->logger->info(sprintf('Migrating schema %s', $schemaName));
+    private function migrateSchema(
+        array $tablesWhiteList,
+        string $replicaSchemaName,
+        string $sourceSapiBucketId,
+        string $targetSapiBucketId,
+        string $targetSchemaName,
+    ): void {
+        $this->logger->info(sprintf('Migrating schema %s', $replicaSchemaName));
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
         $tables = $this->targetConnection->fetchAll(sprintf(
             'SHOW TABLES IN SCHEMA %s.%s;',
             QueryBuilder::quoteIdentifier($this->replicaDatabase),
-            QueryBuilder::quoteIdentifier($schemaName),
+            QueryBuilder::quoteIdentifier($replicaSchemaName),
         ));
         $this->targetConnection->useRole($currentRole);
 
         foreach ($tables as $table) {
-            $tableId = sprintf('%s.%s', $schemaName, $table['name']);
-            if ($tablesWhiteList && !in_array($tableId, $tablesWhiteList, true)) {
+            // Whitelist uses replica schema name format (e.g. "WORKSPACE_xxx.TABLE" or "in.c-bucket.TABLE")
+            $whitelistTableId = sprintf('%s.%s', $replicaSchemaName, $table['name']);
+            if ($tablesWhiteList && !in_array($whitelistTableId, $tablesWhiteList, true)) {
                 continue;
             }
 
             if ($this->dryRun) {
-                $this->logger->info(sprintf('[dry-run] Migrating table %s.%s', $schemaName, $table['name']));
+                $this->logger->info(sprintf('[dry-run] Migrating table %s.%s', $replicaSchemaName, $table['name']));
                 continue;
             }
 
-            if (!$this->targetSapiClient->tableExists($tableId)) {
-                $this->logger->info(sprintf('Creating table "%s".', $tableId));
-                $this->storageModifier->createTable(
-                    $this->sourceSapiClient->getTable($tableId),
-                );
-            }
+            // SAPI table IDs use the bucket ID format
+            $sourceTableId = sprintf('%s.%s', $sourceSapiBucketId, $table['name']);
+            $targetTableId = sprintf('%s.%s', $targetSapiBucketId, $table['name']);
 
-            $this->migrateTable($schemaName, $table['name']);
+            try {
+                if (!$this->targetSapiClient->tableExists($targetTableId)) {
+                    $this->logger->info(sprintf('Creating table "%s".', $targetTableId));
+                    $tableInfo = $this->sourceSapiClient->getTable($sourceTableId);
+                    // Override bucket ID and table ID to match the target bucket
+                    $tableInfo['bucket']['id'] = $targetSapiBucketId;
+                    $tableInfo['id'] = $targetTableId;
+                    $this->storageModifier->createTable($tableInfo);
+                }
+
+                $this->migrateTable($replicaSchemaName, $targetSchemaName, $table['name']);
+            } catch (Throwable $e) {
+                $this->logger->warning(sprintf(
+                    'Error while processing table %s.%s: %s',
+                    $replicaSchemaName,
+                    $table['name'],
+                    $e->getMessage(),
+                ));
+            }
         }
 
         if ($this->dryRun === false) {
-            $this->logger->info(sprintf('Refreshing table information in bucket %s', $schemaName));
-            $this->targetSapiClient->refreshTableInformationInBucket($schemaName);
+            $this->logger->info(sprintf('Refreshing table information in bucket %s', $targetSapiBucketId));
+            $this->targetSapiClient->refreshTableInformationInBucket($targetSapiBucketId);
         } else {
-            $this->logger->info(sprintf('[dry-run] Refreshing table information in bucket %s', $schemaName));
+            $this->logger->info(sprintf('[dry-run] Refreshing table information in bucket %s', $targetSapiBucketId));
         }
     }
 
-    private function migrateTable(string $schemaName, string $tableName): void
-    {
-        $this->logger->info(sprintf('Migrating table %s.%s', $schemaName, $tableName));
+    private function migrateTable(
+        string $replicaSchemaName,
+        string $targetSchemaName,
+        string $tableName,
+    ): void {
+        $this->logger->info(sprintf('Migrating table %s.%s', $replicaSchemaName, $tableName));
+        // Get ownership role from the target database schema
         $tableRole = $this->getSourceRole(
             $this->targetConnection,
             'TABLE',
-            QueryBuilder::quoteIdentifier($schemaName) . '.' . QueryBuilder::quoteIdentifier($tableName),
+            QueryBuilder::quoteIdentifier($targetSchemaName) . '.' . QueryBuilder::quoteIdentifier($tableName),
         );
 
         try {
@@ -185,19 +242,30 @@ class DatabaseMigrate implements MigrateInterface
             $tableRole,
         );
 
-        $columns = $this->targetConnection->getTableColumns($schemaName, $tableName);
+        // Get columns from the replica database schema (source of data).
+        // Workspace schema tables in the replica don't have SAPI system columns like "_timestamp",
+        // while the target tables (created by SAPI) do. Using replica columns ensures the
+        // INSERT INTO ... SELECT FROM query only references columns that exist in both.
+        $replicaColumnsRaw = $this->targetConnection->fetchAll(sprintf(
+            'SHOW COLUMNS IN %s.%s.%s',
+            QueryBuilder::quoteIdentifier($this->replicaDatabase),
+            QueryBuilder::quoteIdentifier($replicaSchemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+        ));
+        $columns = array_map(fn($col) => $col['column_name'], $replicaColumnsRaw);
 
         $compareTimestamp = $this->compareTableMaxTimestamp(
             'ACCOUNTADMIN',
             $tableRole,
             $this->replicaDatabase,
             $this->targetDatabase,
-            $schemaName,
+            $replicaSchemaName,
+            $targetSchemaName,
             $tableName,
         );
 
         if ($compareTimestamp) {
-            $this->logger->info(sprintf('Table %s.%s is up to date', $schemaName, $tableName));
+            $this->logger->info(sprintf('Table %s.%s is up to date', $replicaSchemaName, $tableName));
             return;
         }
 
@@ -205,25 +273,25 @@ class DatabaseMigrate implements MigrateInterface
             $this->targetConnection->query(sprintf(
                 'TRUNCATE TABLE %s.%s.%s;',
                 QueryBuilder::quoteIdentifier($this->targetDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
+                QueryBuilder::quoteIdentifier($targetSchemaName),
                 QueryBuilder::quoteIdentifier($tableName),
             ));
 
             $this->targetConnection->query(sprintf(
                 'INSERT INTO %s.%s.%s (%s) SELECT %s FROM %s.%s.%s;',
                 QueryBuilder::quoteIdentifier($this->targetDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
+                QueryBuilder::quoteIdentifier($targetSchemaName),
                 QueryBuilder::quoteIdentifier($tableName),
                 implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
                 implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
                 QueryBuilder::quoteIdentifier($this->replicaDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
+                QueryBuilder::quoteIdentifier($replicaSchemaName),
                 QueryBuilder::quoteIdentifier($tableName),
             ));
         } catch (RuntimeException $e) {
             $this->logger->warning(sprintf(
                 'Error while migrating table %s.%s: %s',
-                $schemaName,
+                $replicaSchemaName,
                 $tableName,
                 $e->getMessage(),
             ));
@@ -320,7 +388,8 @@ class DatabaseMigrate implements MigrateInterface
         string $secondDatabaseRole,
         string $firstDatabase,
         string $secondDatabase,
-        string $schema,
+        string $firstSchema,
+        string $secondSchema,
         string $table,
     ): bool {
         $sqlTemplate = 'SELECT max("_timestamp") as "maxTimestamp" FROM %s.%s.%s';
@@ -332,7 +401,7 @@ class DatabaseMigrate implements MigrateInterface
             $lastUpdateInFirstDatabase = $this->targetConnection->fetchAll(sprintf(
                 $sqlTemplate,
                 QueryBuilder::quoteIdentifier($firstDatabase),
-                QueryBuilder::quoteIdentifier($schema),
+                QueryBuilder::quoteIdentifier($firstSchema),
                 QueryBuilder::quoteIdentifier($table),
             ));
 
@@ -340,7 +409,7 @@ class DatabaseMigrate implements MigrateInterface
             $lastUpdateInSecondDatabase = $this->targetConnection->fetchAll(sprintf(
                 $sqlTemplate,
                 QueryBuilder::quoteIdentifier($secondDatabase),
-                QueryBuilder::quoteIdentifier($schema),
+                QueryBuilder::quoteIdentifier($secondSchema),
                 QueryBuilder::quoteIdentifier($table),
             ));
         } catch (RuntimeException $e) {
