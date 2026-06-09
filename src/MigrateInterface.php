@@ -8,5 +8,8 @@ use Psr\Log\LoggerInterface;
 
 interface MigrateInterface
 {
-    public function migrate(Config $config): void;
+    /**
+     * @return string[] List of table IDs that failed migration
+     */
+    public function migrate(Config $config): array;
 }

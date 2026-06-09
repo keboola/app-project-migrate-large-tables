@@ -254,6 +254,11 @@ class Config extends BaseConfig
         return (bool) $this->getValue(['parameters', 'forcePrimaryKeyNotNull']);
     }
 
+    public function forceNullable(): bool
+    {
+        return (bool) $this->getValue(['parameters', 'forceNullable']);
+    }
+
     public function getGcsLargeTableParallelChunks(): int
     {
         return $this->getIntValue(['parameters', 'gcsLargeTable', 'parallelChunks'], 3);

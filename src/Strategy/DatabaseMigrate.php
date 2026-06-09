@@ -35,7 +35,7 @@ class DatabaseMigrate implements MigrateInterface
         $this->storageModifier = new StorageModifier($this->targetSapiClient);
     }
 
-    public function migrate(Config $config): void
+    public function migrate(Config $config): array
     {
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
@@ -47,16 +47,22 @@ class DatabaseMigrate implements MigrateInterface
         }
         $this->targetConnection->useRole($currentRole);
 
+        $failedTables = [];
         if ($config->shouldMigrateData()) {
-            $this->migrateData($config);
+            $failedTables = $this->migrateData($config);
         }
 
         if ($config->shouldDropReplicaDatabase()) {
             $this->dropReplicaDatabase();
         }
+
+        return $failedTables;
     }
 
-    public function migrateData(Config $config): void
+    /**
+     * @return string[] List of table IDs that failed migration
+     */
+    public function migrateData(Config $config): array
     {
         $databaseRole = $this->getSourceRole(
             $this->targetConnection,
@@ -95,6 +101,7 @@ class DatabaseMigrate implements MigrateInterface
         ));
         $this->targetConnection->useRole($currentRole);
 
+        $failedTables = [];
         foreach ($schemas as $schema) {
             $schemaName = $schema['name'];
             if (in_array($schemaName, self::SKIP_CLONE_SCHEMAS, true)) {
@@ -119,12 +126,27 @@ class DatabaseMigrate implements MigrateInterface
                 }
             }
 
-            $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            $schemaFailedTables = $this->migrateSchema($config, $schemaName);
+            array_push($failedTables, ...$schemaFailedTables);
         }
+
+        if ($failedTables !== []) {
+            $this->logger->warning(sprintf(
+                'Migration completed with %d failed table(s): %s',
+                count($failedTables),
+                implode(', ', $failedTables),
+            ));
+        }
+
+        return $failedTables;
     }
 
-    private function migrateSchema(array $tablesWhiteList, string $schemaName): void
+    /**
+     * @return string[] List of table IDs that failed migration
+     */
+    private function migrateSchema(Config $config, string $schemaName): array
     {
+        $tablesWhiteList = $config->getMigrateTables();
         $this->logger->info(sprintf('Migrating schema %s', $schemaName));
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
@@ -135,6 +157,8 @@ class DatabaseMigrate implements MigrateInterface
         ));
         $this->targetConnection->useRole($currentRole);
 
+        $failedTables = [];
+        $schemaRole = $this->targetConnection->getCurrentRole();
         foreach ($tables as $table) {
             $tableId = sprintf('%s.%s', $schemaName, $table['name']);
             if ($tablesWhiteList && !in_array($tableId, $tablesWhiteList, true)) {
@@ -146,14 +170,42 @@ class DatabaseMigrate implements MigrateInterface
                 continue;
             }
 
-            if (!$this->targetSapiClient->tableExists($tableId)) {
-                $this->logger->info(sprintf('Creating table "%s".', $tableId));
-                $this->storageModifier->createTable(
-                    $this->sourceSapiClient->getTable($tableId),
-                );
-            }
+            try {
+                if (!$this->targetSapiClient->tableExists($tableId)) {
+                    $this->logger->info(sprintf('Creating table "%s".', $tableId));
+                    $this->storageModifier->createTable(
+                        $this->sourceSapiClient->getTable($tableId),
+                        $config->forcePrimaryKeyNotNull(),
+                        $config->forceNullable(),
+                    );
+                } elseif ($config->forceNullable()) {
+                    $this->logger->info(sprintf(
+                        'Table "%s" already exists, forcing columns to nullable.',
+                        $tableId,
+                    ));
+                    $this->storageModifier->forceColumnsNullable($tableId);
+                }
 
-            $this->migrateTable($schemaName, $table['name']);
+                $this->migrateTable($schemaName, $table['name']);
+            } catch (Throwable $e) {
+                $this->logger->warning(sprintf(
+                    'Skipping migration of table "%s". Reason: "%s".',
+                    $tableId,
+                    $e->getMessage(),
+                ));
+                $failedTables[] = $tableId;
+                $this->targetConnection->useRole($schemaRole);
+                continue;
+            }
+        }
+
+        if ($failedTables !== []) {
+            $this->logger->warning(sprintf(
+                'Failed to migrate %d table(s) in schema "%s": %s',
+                count($failedTables),
+                $schemaName,
+                implode(', ', $failedTables),
+            ));
         }
 
         if ($this->dryRun === false) {
@@ -162,6 +214,8 @@ class DatabaseMigrate implements MigrateInterface
         } else {
             $this->logger->info(sprintf('[dry-run] Refreshing table information in bucket %s', $schemaName));
         }
+
+        return $failedTables;
     }
 
     private function migrateTable(string $schemaName, string $tableName): void
@@ -201,34 +255,24 @@ class DatabaseMigrate implements MigrateInterface
             return;
         }
 
-        try {
-            $this->targetConnection->query(sprintf(
-                'TRUNCATE TABLE %s.%s.%s;',
-                QueryBuilder::quoteIdentifier($this->targetDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
-                QueryBuilder::quoteIdentifier($tableName),
-            ));
+        $this->targetConnection->query(sprintf(
+            'TRUNCATE TABLE %s.%s.%s;',
+            QueryBuilder::quoteIdentifier($this->targetDatabase),
+            QueryBuilder::quoteIdentifier($schemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+        ));
 
-            $this->targetConnection->query(sprintf(
-                'INSERT INTO %s.%s.%s (%s) SELECT %s FROM %s.%s.%s;',
-                QueryBuilder::quoteIdentifier($this->targetDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
-                QueryBuilder::quoteIdentifier($tableName),
-                implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
-                implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
-                QueryBuilder::quoteIdentifier($this->replicaDatabase),
-                QueryBuilder::quoteIdentifier($schemaName),
-                QueryBuilder::quoteIdentifier($tableName),
-            ));
-        } catch (RuntimeException $e) {
-            $this->logger->warning(sprintf(
-                'Error while migrating table %s.%s: %s',
-                $schemaName,
-                $tableName,
-                $e->getMessage(),
-            ));
-            return;
-        }
+        $this->targetConnection->query(sprintf(
+            'INSERT INTO %s.%s.%s (%s) SELECT %s FROM %s.%s.%s;',
+            QueryBuilder::quoteIdentifier($this->targetDatabase),
+            QueryBuilder::quoteIdentifier($schemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+            implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
+            implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
+            QueryBuilder::quoteIdentifier($this->replicaDatabase),
+            QueryBuilder::quoteIdentifier($schemaName),
+            QueryBuilder::quoteIdentifier($tableName),
+        ));
     }
 
     private function getSourceRole(Connection $connection, string $showGrantsOn, string $targetSourceName): string
