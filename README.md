@@ -31,6 +31,35 @@ ALTER DATABASE {{SOURCE_DATABASE_NAME}} ENABLE REPLICATION TO ACCOUNTS {{DESTINA
 
 If these conditions are not met, please use SAPI mode.
 
+#### Replication Group (`replicationStrategy: group`)
+
+Instead of replicating each database independently, the application can use a Snowflake **Replication Group**, which keeps related databases together and preserves cross-database zero-copy clones (avoiding storage inflation). The application performs the SQL below automatically; this is what it does under the hood (and how you would set it up manually).
+
+On the **source** account, create the replication group spanning the related databases:
+```sql
+CREATE REPLICATION GROUP {{REPLICATION_GROUP_NAME}}
+  OBJECT_TYPES = DATABASES
+  ALLOWED_DATABASES = {{SOURCE_DATABASE_1}}, {{SOURCE_DATABASE_2}}
+  ALLOWED_ACCOUNTS = {{DESTINATION_ORG_NAME}}.{{DESTINATION_ACCOUNT_NAME}};
+```
+
+On the **destination** account, create a replica of the group and refresh it:
+```sql
+CREATE REPLICATION GROUP {{REPLICATION_GROUP_NAME}}
+  AS REPLICA OF {{SOURCE_ORG_NAME}}.{{SOURCE_ACCOUNT_NAME}}.{{REPLICATION_GROUP_NAME}};
+ALTER REPLICATION GROUP {{REPLICATION_GROUP_NAME}} REFRESH;
+```
+
+The member databases then appear on the destination under their original source names. Once all of them are migrated, the group is removed:
+```sql
+DROP REPLICATION GROUP IF EXISTS {{REPLICATION_GROUP_NAME}};
+```
+
+Notes:
+- The `org_name.account_name` identifiers come from `SELECT CURRENT_ORGANIZATION_NAME(), CURRENT_ACCOUNT_NAME();` run on the respective account (note the `org.account` format, **not** `region.account` used by standalone replication).
+- Because group members keep their source names and cannot be renamed, this strategy is not supported between stacks that share the same database prefix (the replicated database would collide with a destination-owned one) — use `standalone` for those.
+- The group is shared by all per-project runs migrating its member databases, so a single run does not drop it by default (`replica.drop` defaults to `false` in group mode); the group is torn down once after all databases are migrated.
+
 ## Configuration
 
 The `config.json` configuration file contains the following properties:
@@ -45,6 +74,9 @@ The `config.json` configuration file contains the following properties:
         - `parallelChunks` - integer (optional, default `3`, min `1`, max `20`): Number of chunks to migrate in parallel
         - `chunkSize` - integer (optional, default `150`, min `1`): Number of slice files per chunk
     - `forcePrimaryKeyNotNull` - boolean (optional): If set to `true`, primary key columns will always be created as `NOT NULL` during typed table migration. Useful when source primary key columns are marked nullable but the target backend (e.g. BigQuery) requires primary keys to be non-nullable. Default: `false`.
+    - `replicationStrategy` - string (optional, `database` mode): `standalone` (default) replicates each project database independently; `group` uses a Snowflake Replication Group to preserve cross-database zero-copy clones and avoid storage inflation.
+    - `replicationGroup` - object (optional, required when `replicationStrategy` is `group`):
+        - `name` - string (required): Replication group name. The source account identifier is derived automatically from `sourceKbcUrl`, and each run migrates the single project database it resolves from the project id — no database list is needed here. **Restriction:** `group` is rejected when the source and target stacks share the same database prefix (the replicated database would collide with a destination-owned one). Use `standalone` for such stack pairs.
     - `db` - object (optional in `database` mode; extends the `db` object in `image_parameters`):
         - `host` - string (required): Snowflake host
         - `username` - string (required): Snowflake username
@@ -92,6 +124,22 @@ The `config.json` configuration file contains the following properties:
     "mode": "database",
     "sourceKbcUrl": "https://connection.keboola.com/",
     "#sourceKbcToken": "SOURCE_KBC_TOKEN"
+  }
+}
+```
+
+### Database mode with Replication Group
+
+```json
+{
+  "parameters": {
+    "mode": "database",
+    "sourceKbcUrl": "https://connection.keboola.com/",
+    "#sourceKbcToken": "SOURCE_KBC_TOKEN",
+    "replicationStrategy": "group",
+    "replicationGroup": {
+      "name": "MIGRATE_RG_1234"
+    }
   }
 }
 ```

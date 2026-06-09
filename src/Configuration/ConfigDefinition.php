@@ -39,7 +39,9 @@ class ConfigDefinition extends BaseConfigDefinition
                     ->children()
                         ->booleanNode('create')->defaultTrue()->end()
                         ->booleanNode('refresh')->defaultTrue()->end()
-                        ->booleanNode('drop')->defaultTrue()->end()
+                        // No default: the default depends on replicationStrategy and is resolved in
+                        // Config::shouldDropReplicaDatabase() (true for standalone, false for group).
+                        ->booleanNode('drop')->end()
                     ->end()
                 ->end()
                 ->enumNode('replicationStrategy')

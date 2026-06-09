@@ -282,4 +282,45 @@ class ConfigTest extends TestCase
 
         self::assertFalse($config->useReplicationGroup());
     }
+
+    public function testShouldDropReplicaDatabaseDefaultsTrueForStandalone(): void
+    {
+        $config = $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+        ]);
+
+        self::assertTrue($config->shouldDropReplicaDatabase());
+    }
+
+    public function testShouldDropReplicaDatabaseDefaultsFalseForGroup(): void
+    {
+        $config = $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'replicationStrategy' => 'group',
+            'replicationGroup' => [
+                'name' => 'MIGRATE_RG_1234',
+            ],
+        ]);
+
+        self::assertFalse($config->shouldDropReplicaDatabase());
+    }
+
+    public function testShouldDropReplicaDatabaseRespectsExplicitValueInGroup(): void
+    {
+        $config = $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'replicationStrategy' => 'group',
+            'replicationGroup' => [
+                'name' => 'MIGRATE_RG_1234',
+            ],
+            'replica' => [
+                'drop' => true,
+            ],
+        ]);
+
+        self::assertTrue($config->shouldDropReplicaDatabase());
+    }
 }

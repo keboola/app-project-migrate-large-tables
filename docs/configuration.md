@@ -56,7 +56,7 @@ Required if `mode: database`. Ignored if `mode: sapi`.
 |---|---|---|
 | `replica.create` | `true` | Creates replica database |
 | `replica.refresh` | `true` | Refreshes replica before migration |
-| `replica.drop` | `true` | Drops replica database after migration |
+| `replica.drop` | `true` (standalone) / `false` (group) | Drops the replica after migration. In `group` mode the default is `false`: the replication group is shared by all per-project runs migrating its member databases, so a single run must not tear it down — drop it once after all databases are migrated (or set `true` explicitly). |
 
 > The TRUNCATE + INSERT from replica to destination is controlled by the `migrateData` parameter (see General parameters) – it is at the `parameters` level, not under `replica`.
 

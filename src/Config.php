@@ -247,7 +247,10 @@ class Config extends BaseConfig
 
     public function shouldDropReplicaDatabase(): bool
     {
-        return (bool) $this->getValue(['parameters', 'replica', 'drop'], true);
+        // A replication group is shared by all per-project runs migrating its member databases, so it
+        // must not be torn down by an individual run — the orchestrator drops it once at the end (or a
+        // run sets "replica.drop": true explicitly). Standalone replicas are per-run and dropped by default.
+        return (bool) $this->getValue(['parameters', 'replica', 'drop'], !$this->useReplicationGroup());
     }
 
     public function shouldMigrateData(): bool
