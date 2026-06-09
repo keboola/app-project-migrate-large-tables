@@ -72,7 +72,11 @@ class DatabaseMigrate implements MigrateInterface
 
     private function migrateViaReplicationGroup(Config $config): void
     {
-        assert($this->replicationGroupName !== null);
+        if ($this->replicationGroupName === null) {
+            throw new RuntimeException(
+                'Replication group name must be set when replication group mode is enabled.',
+            );
+        }
         $group = new ReplicationGroup($this->replicationGroupName, $this->replicationGroupDatabases);
 
         $currentRole = $this->targetConnection->getCurrentRole();

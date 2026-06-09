@@ -36,12 +36,12 @@ class CreateReplicationsConfigDefinition extends BaseConfigDefinition
                 ->end()
             ->end()
             ->validate()->always(function ($v) {
-                if (!empty($v['#privateKey']) && !empty($v['#password'])) {
+                if (!empty($v['#sourcePrivateKey']) && !empty($v['#sourcePassword'])) {
                     throw new InvalidConfigurationException(
                         'You can use either privateKey or password, not both.',
                     );
                 }
-                if (empty($v['#privateKey']) && empty($v['#password'])) {
+                if (empty($v['#sourcePrivateKey']) && empty($v['#sourcePassword'])) {
                     throw new InvalidConfigurationException(
                         'You must provide either privateKey or password.',
                     );
