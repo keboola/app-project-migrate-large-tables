@@ -186,7 +186,7 @@ class ConfigTest extends TestCase
             ],
             'gcp-europe-west3' => [
                 'https://connection.europe-west3.gcp.keboola.com',
-                'RL74503.COM_KEBOOLA_GCP_EUROPE_WEST3',
+                'RL74503.COM_KEBOOLA_GCP_EUROPE_WEST3_2',
             ],
             'gcp-us-east4' => [
                 'https://connection.us-east4.gcp.keboola.com',

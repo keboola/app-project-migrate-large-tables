@@ -75,6 +75,12 @@ class DatabaseMigrate implements MigrateInterface
                 'Replication group name must be set when replication group mode is enabled.',
             );
         }
+        if ($this->replicationGroupSourceAccountIdentifier === '') {
+            throw new RuntimeException(
+                'Replication group source account identifier must be set when replication group mode '
+                . 'is enabled.',
+            );
+        }
         $group = new ReplicationGroup($this->replicationGroupName);
 
         $currentRole = $this->targetConnection->getCurrentRole();

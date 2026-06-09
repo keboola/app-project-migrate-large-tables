@@ -34,9 +34,9 @@ class Config extends BaseConfig
         'connection.europe-west3.gcp.keboola.com' => [
             'db_replica_prefix' => 'GCPEUW3',
             'db_prefix' => 'KBC_EUW3',
-            'account' => 'IK34405',
-            'region' => 'GCP_EUROPE_WEST4',
-            'accountIdentifier' => 'RL74503.COM_KEBOOLA_GCP_EUROPE_WEST3',
+            'account' => 'PJ41720',
+            'region' => 'GCP_EUROPE_WEST3',
+            'accountIdentifier' => 'RL74503.COM_KEBOOLA_GCP_EUROPE_WEST3_2',
         ],
         'connection.us-east4.gcp.keboola.com' => [
             'db_replica_prefix' => 'GCPUSE4',
@@ -303,7 +303,12 @@ class Config extends BaseConfig
             $stack = self::BYODB_DATABASES[$sourceByodb] ?? [];
         } else {
             $url = parse_url($this->getSourceKbcUrl());
-            assert($url && array_key_exists('host', $url));
+            if (!is_array($url) || !isset($url['host'])) {
+                throw new UserException(sprintf(
+                    'Could not parse host from source KBC URL "%s".',
+                    $this->getSourceKbcUrl(),
+                ));
+            }
             $stack = self::STACK_DATABASES[$url['host']] ?? [];
         }
 

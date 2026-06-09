@@ -80,7 +80,7 @@ Used in database mode:
 | connection.keboola.com | KEBOOLA | AWS_US_WEST_2 |
 | connection.eu-central-1.keboola.com | KEBOOLA | AWS_EU_CENTRAL_1 |
 | connection.north-europe.azure.keboola.com | KEBOOLA | AZURE_WESTEUROPE |
-| connection.europe-west3.gcp.keboola.com | IK34405 | GCP_EUROPE_WEST4 |
+| connection.europe-west3.gcp.keboola.com | PJ41720 | GCP_EUROPE_WEST3 |
 | connection.us-east4.gcp.keboola.com | NE35810 | GCP_US_EAST4 |
 | connection.coates.keboola.cloud | KEBOOLA | AWS_US_EAST_1 |
 
