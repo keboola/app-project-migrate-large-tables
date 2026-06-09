@@ -18,6 +18,8 @@ For large GCS tables (sliced + >50 GB), parallel worker processes (`worker-chunk
 
 Uses native Snowflake database replication (`CREATE DATABASE AS REPLICA OF ...`). Significantly faster than sapi mode for large data when migrating between Snowflake stacks.
 
+Database mode supports two replication strategies, selected by `replicationStrategy`: `standalone` (default) replicates each project database independently, while `group` uses a Snowflake **Replication Group** (`CREATE REPLICATION GROUP ...`) to replicate the listed databases together, preserving cross-database zero-copy clones to avoid storage inflation.
+
 ## What is skipped (sapi mode)
 
 - **Sys bucket** tables (`stage === 'sys'`)

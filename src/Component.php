@@ -94,6 +94,16 @@ class Component extends BaseComponent
                     $replicaDatabase,
                     $targetDatabase,
                     $this->getConfig()->isDryRun(),
+                    $this->getConfig()->useReplicationGroup(),
+                    $this->getConfig()->useReplicationGroup()
+                        ? $this->getConfig()->getReplicationGroupName()
+                        : null,
+                    $this->getConfig()->useReplicationGroup()
+                        ? $this->getConfig()->getReplicationGroupSourceAccountIdentifier()
+                        : '',
+                    $this->getConfig()->useReplicationGroup()
+                        ? $this->getConfig()->getReplicationGroupDatabases()
+                        : [],
                 );
                 break;
             default:

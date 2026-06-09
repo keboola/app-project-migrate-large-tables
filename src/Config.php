@@ -249,6 +249,32 @@ class Config extends BaseConfig
         return (bool) $this->getValue(['parameters', 'migrateData'], true);
     }
 
+    public function getReplicationStrategy(): string
+    {
+        return $this->getStringValue(['parameters', 'replicationStrategy'], 'standalone');
+    }
+
+    public function useReplicationGroup(): bool
+    {
+        return $this->getReplicationStrategy() === 'group';
+    }
+
+    public function getReplicationGroupName(): string
+    {
+        return $this->getStringValue(['parameters', 'replicationGroup', 'name']);
+    }
+
+    public function getReplicationGroupSourceAccountIdentifier(): string
+    {
+        return $this->getStringValue(['parameters', 'replicationGroup', 'sourceAccountIdentifier']);
+    }
+
+    /** @return string[] */
+    public function getReplicationGroupDatabases(): array
+    {
+        return $this->getArrayValue(['parameters', 'replicationGroup', 'databases']);
+    }
+
     public function forcePrimaryKeyNotNull(): bool
     {
         return (bool) $this->getValue(['parameters', 'forcePrimaryKeyNotNull']);

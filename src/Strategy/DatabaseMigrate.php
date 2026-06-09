@@ -31,11 +31,25 @@ class DatabaseMigrate implements MigrateInterface
         private readonly string $replicaDatabase,
         private readonly string $targetDatabase,
         private readonly bool $dryRun = false,
+        private readonly bool $useReplicationGroup = false,
+        private readonly ?string $replicationGroupName = null,
+        private readonly string $replicationGroupSourceAccountIdentifier = '',
+        /** @var string[] */
+        private readonly array $replicationGroupDatabases = [],
     ) {
         $this->storageModifier = new StorageModifier($this->targetSapiClient);
     }
 
     public function migrate(Config $config): void
+    {
+        if ($this->useReplicationGroup) {
+            $this->migrateViaReplicationGroup($config);
+            return;
+        }
+        $this->migrateViaStandaloneReplica($config);
+    }
+
+    private function migrateViaStandaloneReplica(Config $config): void
     {
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
@@ -48,15 +62,80 @@ class DatabaseMigrate implements MigrateInterface
         $this->targetConnection->useRole($currentRole);
 
         if ($config->shouldMigrateData()) {
-            $this->migrateData($config);
+            $this->migrateData($config, $this->replicaDatabase);
         }
 
         if ($config->shouldDropReplicaDatabase()) {
-            $this->dropReplicaDatabase();
+            $this->dropReplicaDatabase($this->replicaDatabase);
         }
     }
 
-    public function migrateData(Config $config): void
+    private function migrateViaReplicationGroup(Config $config): void
+    {
+        assert($this->replicationGroupName !== null);
+        $group = new ReplicationGroup($this->replicationGroupName, $this->replicationGroupDatabases);
+
+        $currentRole = $this->targetConnection->getCurrentRole();
+        $this->targetConnection->useRole('ACCOUNTADMIN');
+        if ($config->shouldCreateReplicaDatabase()) {
+            $this->createReplicationGroupReplica($group);
+        }
+        if ($config->shouldRefreshReplicaDatabase()) {
+            $this->refreshReplicationGroup($config, $group);
+        }
+        $this->targetConnection->useRole($currentRole);
+
+        if ($config->shouldMigrateData()) {
+            foreach ($group->getDatabases() as $replicaDatabase) {
+                $this->migrateData($config, $replicaDatabase);
+            }
+        }
+
+        if ($config->shouldDropReplicaDatabase()) {
+            $this->dropReplicationGroup($group);
+        }
+    }
+
+    private function createReplicationGroupReplica(ReplicationGroup $group): void
+    {
+        $this->logger->info(sprintf(
+            'Creating replication group replica "%s" as replica of %s',
+            $this->replicationGroupName,
+            $this->replicationGroupSourceAccountIdentifier,
+        ));
+        try {
+            $this->targetConnection->query(
+                $group->createSecondarySql($this->replicationGroupSourceAccountIdentifier),
+            );
+        } catch (RuntimeException $e) {
+            if (!str_contains($e->getMessage(), 'already exists')) {
+                throw $e;
+            }
+            $this->logger->info(sprintf(
+                'Replication group replica "%s" already exists, skipping create.',
+                $this->replicationGroupName,
+            ));
+        }
+    }
+
+    private function refreshReplicationGroup(Config $config, ReplicationGroup $group): void
+    {
+        $this->targetConnection->query(sprintf(
+            'USE WAREHOUSE %s',
+            QueryBuilder::quoteIdentifier($config->getTargetWarehouse()),
+        ));
+        $this->logger->info(sprintf('Refreshing replication group "%s"', $this->replicationGroupName));
+        $this->targetConnection->query($group->refreshSql());
+    }
+
+    private function dropReplicationGroup(ReplicationGroup $group): void
+    {
+        $this->targetConnection->useRole('ACCOUNTADMIN');
+        $this->logger->info(sprintf('Dropping replication group "%s"', $this->replicationGroupName));
+        $this->targetConnection->query($group->dropSql());
+    }
+
+    public function migrateData(Config $config, string $replicaDatabase): void
     {
         $databaseRole = $this->getSourceRole(
             $this->targetConnection,
@@ -91,7 +170,7 @@ class DatabaseMigrate implements MigrateInterface
         $this->targetConnection->useRole('ACCOUNTADMIN');
         $schemas = $this->targetConnection->fetchAll(sprintf(
             'SHOW SCHEMAS IN DATABASE %s;',
-            QueryBuilder::quoteIdentifier($this->replicaDatabase),
+            QueryBuilder::quoteIdentifier($replicaDatabase),
         ));
         $this->targetConnection->useRole($currentRole);
 
@@ -119,18 +198,18 @@ class DatabaseMigrate implements MigrateInterface
                 }
             }
 
-            $this->migrateSchema($config->getMigrateTables(), $schemaName);
+            $this->migrateSchema($config->getMigrateTables(), $schemaName, $replicaDatabase);
         }
     }
 
-    private function migrateSchema(array $tablesWhiteList, string $schemaName): void
+    private function migrateSchema(array $tablesWhiteList, string $schemaName, string $replicaDatabase): void
     {
         $this->logger->info(sprintf('Migrating schema %s', $schemaName));
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
         $tables = $this->targetConnection->fetchAll(sprintf(
             'SHOW TABLES IN SCHEMA %s.%s;',
-            QueryBuilder::quoteIdentifier($this->replicaDatabase),
+            QueryBuilder::quoteIdentifier($replicaDatabase),
             QueryBuilder::quoteIdentifier($schemaName),
         ));
         $this->targetConnection->useRole($currentRole);
@@ -153,7 +232,7 @@ class DatabaseMigrate implements MigrateInterface
                 );
             }
 
-            $this->migrateTable($schemaName, $table['name']);
+            $this->migrateTable($schemaName, $table['name'], $replicaDatabase);
         }
 
         if ($this->dryRun === false) {
@@ -164,7 +243,7 @@ class DatabaseMigrate implements MigrateInterface
         }
     }
 
-    private function migrateTable(string $schemaName, string $tableName): void
+    private function migrateTable(string $schemaName, string $tableName, string $replicaDatabase): void
     {
         $this->logger->info(sprintf('Migrating table %s.%s', $schemaName, $tableName));
         $tableRole = $this->getSourceRole(
@@ -181,7 +260,7 @@ class DatabaseMigrate implements MigrateInterface
         }
 
         $this->targetConnection->grantPrivilegesToReplicaDatabase(
-            $this->replicaDatabase,
+            $replicaDatabase,
             $tableRole,
         );
 
@@ -190,7 +269,7 @@ class DatabaseMigrate implements MigrateInterface
         $compareTimestamp = $this->compareTableMaxTimestamp(
             'ACCOUNTADMIN',
             $tableRole,
-            $this->replicaDatabase,
+            $replicaDatabase,
             $this->targetDatabase,
             $schemaName,
             $tableName,
@@ -216,7 +295,7 @@ class DatabaseMigrate implements MigrateInterface
                 QueryBuilder::quoteIdentifier($tableName),
                 implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
                 implode(', ', array_map(fn($v) => QueryBuilder::quoteIdentifier($v), $columns)),
-                QueryBuilder::quoteIdentifier($this->replicaDatabase),
+                QueryBuilder::quoteIdentifier($replicaDatabase),
                 QueryBuilder::quoteIdentifier($schemaName),
                 QueryBuilder::quoteIdentifier($tableName),
             ));
@@ -306,12 +385,12 @@ class DatabaseMigrate implements MigrateInterface
         ));
     }
 
-    private function dropReplicaDatabase(): void
+    private function dropReplicaDatabase(string $replicaDatabase): void
     {
         $this->targetConnection->useRole('ACCOUNTADMIN');
         $this->targetConnection->query(sprintf(
             'DROP DATABASE %s;',
-            QueryBuilder::quoteIdentifier($this->replicaDatabase),
+            QueryBuilder::quoteIdentifier($replicaDatabase),
         ));
     }
 

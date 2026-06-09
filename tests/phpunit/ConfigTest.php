@@ -114,4 +114,49 @@ class ConfigTest extends TestCase
         ]);
         self::assertTrue($config->forcePrimaryKeyNotNull());
     }
+
+    public function testReplicationStrategyDefaultsToStandalone(): void
+    {
+        $config = $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+        ]);
+
+        self::assertSame('standalone', $config->getReplicationStrategy());
+        self::assertFalse($config->useReplicationGroup());
+    }
+
+    public function testReplicationGroupConfig(): void
+    {
+        $config = $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'replicationStrategy' => 'group',
+            'replicationGroup' => [
+                'name' => 'MIGRATE_RG_1234',
+                'sourceAccountIdentifier' => 'MYORG.SOURCEACCT',
+                'databases' => ['SAPI_1234', 'SAPI_5678'],
+            ],
+        ]);
+
+        self::assertSame('group', $config->getReplicationStrategy());
+        self::assertTrue($config->useReplicationGroup());
+        self::assertSame('MIGRATE_RG_1234', $config->getReplicationGroupName());
+        self::assertSame('MYORG.SOURCEACCT', $config->getReplicationGroupSourceAccountIdentifier());
+        self::assertSame(['SAPI_1234', 'SAPI_5678'], $config->getReplicationGroupDatabases());
+    }
+
+    public function testReplicationGroupRequiresNameWhenStrategyGroup(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage(
+            'When "replicationStrategy" is "group", "replicationGroup.name" must be set.',
+        );
+
+        $this->buildConfig([
+            'sourceKbcUrl' => 'https://connection.keboola.com',
+            '#sourceKbcToken' => 'token',
+            'replicationStrategy' => 'group',
+        ]);
+    }
 }

@@ -42,6 +42,17 @@ class ConfigDefinition extends BaseConfigDefinition
                         ->booleanNode('drop')->defaultTrue()->end()
                     ->end()
                 ->end()
+                ->enumNode('replicationStrategy')
+                    ->values(['standalone', 'group'])
+                    ->defaultValue('standalone')
+                ->end()
+                ->arrayNode('replicationGroup')
+                    ->children()
+                        ->scalarNode('name')->cannotBeEmpty()->end()
+                        ->scalarNode('sourceAccountIdentifier')->cannotBeEmpty()->end()
+                        ->arrayNode('databases')->prototype('scalar')->end()->end()
+                    ->end()
+                ->end()
                 ->arrayNode('db')
                     ->validate()->always(function ($v) {
                         if (!empty($v['#privateKey']) && !empty($v['#password'])) {
@@ -68,6 +79,33 @@ class ConfigDefinition extends BaseConfigDefinition
             ->end()
         ;
         // @formatter:on
+        $parametersNode
+            ->validate()
+            ->always(function ($v) {
+                if (($v['replicationStrategy'] ?? 'standalone') !== 'group') {
+                    return $v;
+                }
+                if (empty($v['replicationGroup']['name'])) {
+                    throw new InvalidConfigurationException(
+                        'When "replicationStrategy" is "group", "replicationGroup.name" must be set.',
+                    );
+                }
+                if (empty($v['replicationGroup']['sourceAccountIdentifier'])) {
+                    throw new InvalidConfigurationException(
+                        'When "replicationStrategy" is "group", ' .
+                        '"replicationGroup.sourceAccountIdentifier" must be set.',
+                    );
+                }
+                if (empty($v['replicationGroup']['databases'])) {
+                    throw new InvalidConfigurationException(
+                        'When "replicationStrategy" is "group", ' .
+                        '"replicationGroup.databases" must not be empty.',
+                    );
+                }
+                return $v;
+            })
+            ->end()
+        ;
         return $parametersNode;
     }
 }

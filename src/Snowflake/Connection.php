@@ -13,6 +13,10 @@ class Connection extends AdapterConnection
 
     private ?string $account = null;
 
+    private ?string $orgName = null;
+
+    private ?string $accountName = null;
+
     private string $user;
 
     public function __construct(array $options)
@@ -46,6 +50,26 @@ class Connection extends AdapterConnection
             $this->account = $this->fetchAll('SELECT CURRENT_ACCOUNT() AS "account";')[0]['account'];
         }
         return $this->account;
+    }
+
+    public function getOrgName(): string
+    {
+        if (is_null($this->orgName)) {
+            $this->orgName = $this->fetchAll(
+                'SELECT CURRENT_ORGANIZATION_NAME() AS "orgName";',
+            )[0]['orgName'];
+        }
+        return $this->orgName;
+    }
+
+    public function getAccountName(): string
+    {
+        if (is_null($this->accountName)) {
+            $this->accountName = $this->fetchAll(
+                'SELECT CURRENT_ACCOUNT_NAME() AS "accountName";',
+            )[0]['accountName'];
+        }
+        return $this->accountName;
     }
 
     public function grantRoleToMigrateUser(string $tableRole): void

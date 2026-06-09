@@ -24,6 +24,16 @@ class CreateReplicationsConfigDefinition extends BaseConfigDefinition
                 ->scalarNode('#sourcePrivateKey')->cannotBeEmpty()->end()
                 ->integerNode('projectIdFrom')->isRequired()->end()
                 ->integerNode('projectIdTo')->isRequired()->end()
+                ->enumNode('replicationStrategy')
+                    ->values(['standalone', 'group'])
+                    ->defaultValue('standalone')
+                ->end()
+                ->arrayNode('replicationGroup')
+                    ->children()
+                        ->scalarNode('name')->cannotBeEmpty()->end()
+                        ->arrayNode('databases')->prototype('scalar')->end()->end()
+                    ->end()
+                ->end()
             ->end()
             ->validate()->always(function ($v) {
                 if (!empty($v['#privateKey']) && !empty($v['#password'])) {
@@ -35,6 +45,19 @@ class CreateReplicationsConfigDefinition extends BaseConfigDefinition
                     throw new InvalidConfigurationException(
                         'You must provide either privateKey or password.',
                     );
+                }
+                if (($v['replicationStrategy'] ?? 'standalone') === 'group') {
+                    if (empty($v['replicationGroup']['name'])) {
+                        throw new InvalidConfigurationException(
+                            'When "replicationStrategy" is "group", "replicationGroup.name" must be set.',
+                        );
+                    }
+                    if (empty($v['replicationGroup']['databases'])) {
+                        throw new InvalidConfigurationException(
+                            'When "replicationStrategy" is "group", ' .
+                            '"replicationGroup.databases" must not be empty.',
+                        );
+                    }
                 }
                 return $v;
             })->end()

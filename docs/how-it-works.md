@@ -149,7 +149,19 @@ Snowflake enforces PK uniqueness during `INSERT`. Incremental chunk uploads woul
 
 Database mode uses native Snowflake database replication. Data is not transferred via SAPI – it goes directly Snowflake-to-Snowflake. Significantly faster for large data.
 
-### DatabaseMigrate::migrate() flow
+### Replication strategy: standalone vs group
+
+`replicationStrategy` selects how replication is set up:
+
+- **standalone** (default): each project database is replicated independently
+  (`CREATE DATABASE ... AS REPLICA OF ...`). Cross-database zero-copy clones get
+  materialized on refresh, inflating storage.
+- **group**: a single Snowflake **Replication Group** replicates the listed
+  databases together (`CREATE REPLICATION GROUP ...`), preserving cross-database
+  clone relationships. See
+  https://docs.snowflake.com/en/user-guide/database-replication-considerations
+
+### DatabaseMigrate::migrate() flow (standalone)
 
 ```
 1. targetConnection.useRole('ACCOUNTADMIN')
@@ -170,6 +182,27 @@ Database mode uses native Snowflake database replication. Data is not transferre
 
 6. (if shouldDropReplicaDatabase)
    DROP DATABASE <replicaDb>;
+```
+
+### Replication group flow (replicationStrategy: group)
+
+Primary (createReplications sync action):
+```
+CREATE REPLICATION GROUP <rg>
+  OBJECT_TYPES = DATABASES
+  ALLOWED_DATABASES = <db1>, <db2>, ...
+  ALLOWED_ACCOUNTS = <targetOrg>.<targetAccount>;
+```
+(target org.account read via CURRENT_ORGANIZATION_NAME() / CURRENT_ACCOUNT_NAME();
+"already exists" → ALTER ... SET ALLOWED_DATABASES / ALLOWED_ACCOUNTS)
+
+Secondary (run):
+```
+CREATE REPLICATION GROUP <rg> AS REPLICA OF <sourceOrg>.<sourceAccount>.<rg>;
+ALTER REPLICATION GROUP <rg> REFRESH;
+foreach member database:
+  migrateData(<memberDb>)        ← same TRUNCATE+INSERT loop as standalone
+DROP REPLICATION GROUP IF EXISTS <rg>;
 ```
 
 ### migrateData() – detail
@@ -235,9 +268,15 @@ For BYODB there is one predefined value in `Config.php` (`BYODB_DATABASES`): `so
 Before the first database mode migration between two Snowflake stacks, the source project must enable cross-account replication. Sync action `createReplications` (camelCase) runs:
 
 ```
-DatabaseReplication::run():
-  ALTER DATABASE <sourceDb>
-    ENABLE REPLICATION TO ACCOUNTS <targetAccount>;
+DatabaseReplication::createReplications():
+  standalone:
+    ALTER DATABASE <sourceDb>
+      ENABLE REPLICATION TO ACCOUNTS <targetAccount>;
+  group (replicationStrategy: group):
+    CREATE REPLICATION GROUP <rg>
+      OBJECT_TYPES = DATABASES
+      ALLOWED_DATABASES = <db1>, <db2>, ...
+      ALLOWED_ACCOUNTS = <targetOrg>.<targetAccount>;
 ```
 
 This action must be run in the **source** project using its SAPI token.

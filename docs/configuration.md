@@ -62,6 +62,15 @@ Required if `mode: database`. Ignored if `mode: sapi`.
 
 > Predefined stack-to-Snowflake-account mappings are in `src/Config.php`. To add a new stack, extend this mapping.
 
+### Replication strategy
+
+| Parameter | Default | Description |
+|---|---|---|
+| `replicationStrategy` | `standalone` | `standalone` = per-database replication (default, backward compatible). `group` = Snowflake Replication Group, preserves cross-database zero-copy clones to avoid storage inflation. |
+| `replicationGroup.name` | – | Replication group name. Required when `replicationStrategy: group`. Must be the SAME name on the primary (`createReplications`) and secondary (`run`) sides — the caller supplies it. |
+| `replicationGroup.databases` | – | Explicit list of source databases that form the group (used as `ALLOWED_DATABASES` on the primary, and iterated for data copy on the secondary). Required when `replicationStrategy: group`. |
+| `replicationGroup.sourceAccountIdentifier` | – | Source account in `org_name.account_name` format. Run action only. Populated by the orchestrator (`app-project-migrate`). Required when `replicationStrategy: group`. |
+
 ## Configuration examples
 
 ### SAPI mode (default)
@@ -137,6 +146,30 @@ Required if `mode: database`. Ignored if `mode: sapi`.
     "#sourceKbcToken": "xxx",
     "isSourceByodb": true,
     "sourceByodb": "CUSTOMER_DB_NAME",
+    "db": {
+      "host": "keboola.snowflakecomputing.com",
+      "username": "svc_migrate",
+      "#password": "secret",
+      "warehouse": "MIGRATE_WH"
+    }
+  }
+}
+```
+
+### Database mode with Replication Group
+
+```json
+{
+  "parameters": {
+    "mode": "database",
+    "sourceKbcUrl": "https://connection.keboola.com",
+    "#sourceKbcToken": "xxx",
+    "replicationStrategy": "group",
+    "replicationGroup": {
+      "name": "MIGRATE_RG_1234",
+      "sourceAccountIdentifier": "MYORG.SOURCEACCT",
+      "databases": ["SAPI_1234", "SAPI_5678"]
+    },
     "db": {
       "host": "keboola.snowflakecomputing.com",
       "username": "svc_migrate",
