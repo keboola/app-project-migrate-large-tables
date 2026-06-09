@@ -200,10 +200,22 @@ Secondary (run):
 ```
 CREATE REPLICATION GROUP <rg> AS REPLICA OF <sourceOrg>.<sourceAccount>.<rg>;
 ALTER REPLICATION GROUP <rg> REFRESH;
-foreach member database:
-  migrateData(<memberDb>)        ← same TRUNCATE+INSERT loop as standalone
+migrateData(<sourceDb>)          ← single project DB, same TRUNCATE+INSERT as standalone
 DROP REPLICATION GROUP IF EXISTS <rg>;
 ```
+The group spans several databases (for storage efficiency / preserved cross-DB clones),
+but each run migrates only its own project database. The group replicates member databases
+under their original source names, so the run migrates the same `<sourceDb>` the standalone
+path resolves from `projectId` — no database list is needed on the run action.
+
+(`<sourceOrg>.<sourceAccount>` is derived from `sourceKbcUrl` via the predefined
+stack mapping in `src/Config.php` — the same mechanism standalone uses for
+`<region>.<account>` — not supplied as a config parameter)
+
+Because group members keep their source names and cannot be renamed, `<sourceDb>` could
+collide with a destination-owned database of the same name. To prevent that, group mode is
+rejected at config level when source and target stacks share the same `db_prefix`
+(`Config::assertReplicationGroupStacksCompatible()`).
 
 ### migrateData() – detail
 

@@ -9,11 +9,12 @@ use Keboola\SnowflakeDbAdapter\QueryBuilder;
 class ReplicationGroup
 {
     /**
-     * @param string[] $databases
+     * @param string[] $databases Only needed on the primary side (ALLOWED_DATABASES);
+     *                            the secondary side replicates the whole group by name.
      */
     public function __construct(
         private readonly string $name,
-        private readonly array $databases,
+        private readonly array $databases = [],
     ) {
     }
 

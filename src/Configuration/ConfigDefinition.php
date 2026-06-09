@@ -49,8 +49,6 @@ class ConfigDefinition extends BaseConfigDefinition
                 ->arrayNode('replicationGroup')
                     ->children()
                         ->scalarNode('name')->cannotBeEmpty()->end()
-                        ->scalarNode('sourceAccountIdentifier')->cannotBeEmpty()->end()
-                        ->arrayNode('databases')->prototype('scalar')->end()->end()
                     ->end()
                 ->end()
                 ->arrayNode('db')
@@ -88,18 +86,6 @@ class ConfigDefinition extends BaseConfigDefinition
                 if (empty($v['replicationGroup']['name'])) {
                     throw new InvalidConfigurationException(
                         'When "replicationStrategy" is "group", "replicationGroup.name" must be set.',
-                    );
-                }
-                if (empty($v['replicationGroup']['sourceAccountIdentifier'])) {
-                    throw new InvalidConfigurationException(
-                        'When "replicationStrategy" is "group", ' .
-                        '"replicationGroup.sourceAccountIdentifier" must be set.',
-                    );
-                }
-                if (empty($v['replicationGroup']['databases'])) {
-                    throw new InvalidConfigurationException(
-                        'When "replicationStrategy" is "group", ' .
-                        '"replicationGroup.databases" must not be empty.',
                     );
                 }
                 return $v;

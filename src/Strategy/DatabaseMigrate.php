@@ -34,8 +34,6 @@ class DatabaseMigrate implements MigrateInterface
         private readonly bool $useReplicationGroup = false,
         private readonly ?string $replicationGroupName = null,
         private readonly string $replicationGroupSourceAccountIdentifier = '',
-        /** @var string[] */
-        private readonly array $replicationGroupDatabases = [],
     ) {
         $this->storageModifier = new StorageModifier($this->targetSapiClient);
     }
@@ -77,7 +75,7 @@ class DatabaseMigrate implements MigrateInterface
                 'Replication group name must be set when replication group mode is enabled.',
             );
         }
-        $group = new ReplicationGroup($this->replicationGroupName, $this->replicationGroupDatabases);
+        $group = new ReplicationGroup($this->replicationGroupName);
 
         $currentRole = $this->targetConnection->getCurrentRole();
         $this->targetConnection->useRole('ACCOUNTADMIN');
@@ -89,10 +87,14 @@ class DatabaseMigrate implements MigrateInterface
         }
         $this->targetConnection->useRole($currentRole);
 
+        // The replication group spans several databases for storage efficiency, but each run migrates
+        // a single project database. Unlike standalone — which copies from a renamed local replica
+        // (<prefix>_<id>_REPLICA) — a replication group materializes its members under their original
+        // source names and cannot rename them, so we read from $this->sourceDatabase directly. Group
+        // mode is rejected at config level when source and target stacks share a database prefix, so
+        // this name cannot collide with a destination-owned database.
         if ($config->shouldMigrateData()) {
-            foreach ($group->getDatabases() as $replicaDatabase) {
-                $this->migrateData($config, $replicaDatabase);
-            }
+            $this->migrateData($config, $this->sourceDatabase);
         }
 
         if ($config->shouldDropReplicaDatabase()) {
