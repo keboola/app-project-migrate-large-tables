@@ -42,6 +42,7 @@ class Component extends BaseComponent
                 );
                 break;
             case 'database':
+                $this->getConfig()->assertReplicationGroupStacksCompatible();
                 $verifyToken = $sourceSapiClient->verifyToken();
 
                 $sourceDatabase = sprintf(
@@ -94,6 +95,13 @@ class Component extends BaseComponent
                     $replicaDatabase,
                     $targetDatabase,
                     $this->getConfig()->isDryRun(),
+                    $this->getConfig()->useReplicationGroup(),
+                    $this->getConfig()->useReplicationGroup()
+                        ? $this->getConfig()->getReplicationGroupName()
+                        : '',
+                    $this->getConfig()->useReplicationGroup()
+                        ? $this->getConfig()->getReplicationGroupSourceAccountIdentifier()
+                        : '',
                 );
                 break;
             default:

@@ -39,7 +39,18 @@ class ConfigDefinition extends BaseConfigDefinition
                     ->children()
                         ->booleanNode('create')->defaultTrue()->end()
                         ->booleanNode('refresh')->defaultTrue()->end()
-                        ->booleanNode('drop')->defaultTrue()->end()
+                        // No default: the default depends on replicationStrategy and is resolved in
+                        // Config::shouldDropReplicaDatabase() (true for standalone, false for group).
+                        ->booleanNode('drop')->end()
+                    ->end()
+                ->end()
+                ->enumNode('replicationStrategy')
+                    ->values(['standalone', 'group'])
+                    ->defaultValue('standalone')
+                ->end()
+                ->arrayNode('replicationGroup')
+                    ->children()
+                        ->scalarNode('name')->cannotBeEmpty()->end()
                     ->end()
                 ->end()
                 ->arrayNode('db')
@@ -68,6 +79,21 @@ class ConfigDefinition extends BaseConfigDefinition
             ->end()
         ;
         // @formatter:on
+        $parametersNode
+            ->validate()
+            ->always(function ($v) {
+                if (($v['replicationStrategy'] ?? 'standalone') !== 'group') {
+                    return $v;
+                }
+                if (empty($v['replicationGroup']['name'])) {
+                    throw new InvalidConfigurationException(
+                        'When "replicationStrategy" is "group", "replicationGroup.name" must be set.',
+                    );
+                }
+                return $v;
+            })
+            ->end()
+        ;
         return $parametersNode;
     }
 }

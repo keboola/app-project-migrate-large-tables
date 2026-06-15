@@ -18,6 +18,8 @@ For large GCS tables (sliced + >50 GB), parallel worker processes (`worker-chunk
 
 Uses native Snowflake database replication (`CREATE DATABASE AS REPLICA OF ...`). Significantly faster than sapi mode for large data when migrating between Snowflake stacks.
 
+Database mode supports two replication strategies, selected by `replicationStrategy`: `standalone` (default) replicates each project database independently, while `group` uses a Snowflake **Replication Group** (`CREATE REPLICATION GROUP ...`) to replicate the listed databases together, preserving cross-database zero-copy clones to avoid storage inflation.
+
 ## What is skipped (sapi mode)
 
 - **Sys bucket** tables (`stage === 'sys'`)
@@ -32,7 +34,7 @@ Uses native Snowflake database replication (`CREATE DATABASE AS REPLICA OF ...`)
 | `connection.keboola.com` | KEBOOLA | AWS_US_WEST_2 |
 | `connection.eu-central-1.keboola.com` | KEBOOLA | AWS_EU_CENTRAL_1 |
 | `connection.north-europe.azure.keboola.com` | KEBOOLA | AZURE_WESTEUROPE |
-| `connection.europe-west3.gcp.keboola.com` | IK34405 | GCP_EUROPE_WEST4 |
+| `connection.europe-west3.gcp.keboola.com` | PJ41720 | GCP_EUROPE_WEST3 |
 | `connection.us-east4.gcp.keboola.com` | NE35810 | GCP_US_EAST4 |
 | `connection.coates.keboola.cloud` | KEBOOLA | AWS_US_EAST_1 |
 

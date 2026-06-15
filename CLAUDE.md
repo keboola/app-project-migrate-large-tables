@@ -4,7 +4,7 @@
 
 Keboola App component for direct table data migration between projects. Run by `app-project-migrate` as Phase 5 of the pipeline. Component ID: `keboola.app-project-migrate-large-tables`.
 
-Has two modes: `sapi` (via Storage API) and `database` (via Snowflake replication).
+Has two modes: `sapi` (via Storage API) and `database` (via Snowflake replication). Database mode supports two replication strategies via `replicationStrategy`: `standalone` (default) and `group` (uses a Snowflake Replication Group to avoid materializing cross-DB zero-copy clones).
 
 ## Documentation
 
@@ -60,6 +60,7 @@ docker compose run --rm dev composer build           # phplint + phpcs + phpstan
 | `src/Strategy/SapiMigrate/MigrateGcsLargeTable.php` | Parallel worker migration of large GCS tables |
 | `src/Strategy/DatabaseMigrate.php` | Snowflake replication logic |
 | `src/Strategy/DatabaseReplication.php` | Sync action for enabling replication |
+| `src/Strategy/ReplicationGroup.php` | Builds Replication Group SQL (CREATE/ALTER/REFRESH/DROP) for database mode |
 | `src/Snowflake/Connection.php` | Snowflake DB connection wrapper (grants, role handling) |
 | `src/StorageModifier.php` | Creates buckets and tables in destination project (incl. cross-backend type mapping) |
 | `src/worker-chunk.php` | Child process: downloads GCS chunk, uploads to SAPI |
@@ -79,7 +80,7 @@ Used in database mode:
 | connection.keboola.com | KEBOOLA | AWS_US_WEST_2 |
 | connection.eu-central-1.keboola.com | KEBOOLA | AWS_EU_CENTRAL_1 |
 | connection.north-europe.azure.keboola.com | KEBOOLA | AZURE_WESTEUROPE |
-| connection.europe-west3.gcp.keboola.com | IK34405 | GCP_EUROPE_WEST4 |
+| connection.europe-west3.gcp.keboola.com | PJ41720 | GCP_EUROPE_WEST3 |
 | connection.us-east4.gcp.keboola.com | NE35810 | GCP_US_EAST4 |
 | connection.coates.keboola.cloud | KEBOOLA | AWS_US_EAST_1 |
 
