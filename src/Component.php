@@ -98,7 +98,7 @@ class Component extends BaseComponent
                     $this->getConfig()->useReplicationGroup(),
                     $this->getConfig()->useReplicationGroup()
                         ? $this->getConfig()->getReplicationGroupName()
-                        : null,
+                        : '',
                     $this->getConfig()->useReplicationGroup()
                         ? $this->getConfig()->getReplicationGroupSourceAccountIdentifier()
                         : '',

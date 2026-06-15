@@ -32,7 +32,7 @@ class DatabaseMigrate implements MigrateInterface
         private readonly string $targetDatabase,
         private readonly bool $dryRun = false,
         private readonly bool $useReplicationGroup = false,
-        private readonly ?string $replicationGroupName = null,
+        private readonly string $replicationGroupName = '',
         private readonly string $replicationGroupSourceAccountIdentifier = '',
     ) {
         $this->storageModifier = new StorageModifier($this->targetSapiClient);
@@ -70,7 +70,7 @@ class DatabaseMigrate implements MigrateInterface
 
     private function migrateViaReplicationGroup(Config $config): void
     {
-        if ($this->replicationGroupName === null) {
+        if ($this->replicationGroupName === '') {
             throw new RuntimeException(
                 'Replication group name must be set when replication group mode is enabled.',
             );
