@@ -32,6 +32,7 @@ class MigrateGcsLargeTable
         bool $preserveTimestamp,
         ?callable $gcsClientFactory = null,
         ?callable $processFactory = null,
+        bool $incremental = false,
     ): void {
         if ($this->dryRun === true) {
             $this->logger->info(sprintf('[dry-run] Migrate table %s', $tableInfo['id']));
@@ -76,7 +77,7 @@ class MigrateGcsLargeTable
 
         $targetTableInfo = $this->targetClient->getTable($tableInfo['id']);
         $primaryKey = $targetTableInfo['primaryKey'] ?? [];
-        if (!empty($primaryKey)) {
+        if (!empty($primaryKey) && !$incremental) {
             $this->logger->info(sprintf(
                 'Removing primary key [%s] from %s before import',
                 implode(', ', $primaryKey),
@@ -184,7 +185,7 @@ class MigrateGcsLargeTable
                 $item['process']->stop(0);
             }
 
-            if (!empty($primaryKey)) {
+            if (!empty($primaryKey) && !$incremental) {
                 $this->logger->info(sprintf(
                     'Restoring primary key [%s] on %s',
                     implode(', ', $primaryKey),
