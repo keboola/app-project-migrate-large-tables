@@ -39,6 +39,8 @@ class Component extends BaseComponent
                     $this->getConfig()->isDryRun(),
                     $this->getConfig()->getGcsLargeTableParallelChunks(),
                     $this->getConfig()->getGcsLargeTableChunkSize(),
+                    $this->getConfig()->getGcsLargeTableParallelImports(),
+                    $this->getConfig()->getGcsLargeTableLastChunks(),
                 );
                 break;
             case 'database':
